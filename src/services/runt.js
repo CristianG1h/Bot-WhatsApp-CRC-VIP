@@ -1,11 +1,11 @@
 const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
 const Tesseract = require("tesseract.js");
 
-const CEDULA = "1054541411"; // cambia por una cédula autorizada
-
-const CACHE_FILE = "cache-runt.json";
-const DAILY_LIMIT_FILE = "daily-limit.json";
+const CACHE_FILE = path.join(process.cwd(), "cache-runt.json");
+const DAILY_LIMIT_FILE = path.join(process.cwd(), "daily-limit.json");
+const CAPTCHA_FILE = path.join(process.cwd(), "captcha.png");
 
 const CONFIG = {
   cacheDias: 15,
@@ -15,44 +15,26 @@ const CONFIG = {
   delayMaxMs: 20000,
 };
 
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  cyan: "\x1b[36m",
-  red: "\x1b[31m",
-  gray: "\x1b[90m",
-};
-
-function log(msg) {
-  console.log(msg);
-}
-
-function line(char = "─", len = 50) {
-  return c.gray + char.repeat(len) + c.reset;
-}
-
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function randomMs(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function leerJson(path, fallback) {
-  if (!fs.existsSync(path)) return fallback;
+function leerJson(filePath, fallback) {
+  if (!fs.existsSync(filePath)) return fallback;
+
   try {
-    return JSON.parse(fs.readFileSync(path, "utf8"));
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch {
     return fallback;
   }
 }
 
-function guardarJson(path, data) {
-  fs.writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
+function guardarJson(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
 function fechaHoy() {
@@ -96,7 +78,6 @@ function sumarConsultaDiaria() {
 
 function buscarCache(cedula) {
   const cache = leerJson(CACHE_FILE, {});
-
   const item = cache[cedula];
 
   if (!item) return null;
@@ -134,7 +115,8 @@ function formatearFecha(fechaIso) {
 }
 
 async function generarCaptcha() {
-  const url = "https://runtproapi.runt.gov.co/CYRConsultaCiudadanoMS/captcha/libre-captcha/generar";
+  const url =
+    "https://runtproapi.runt.gov.co/CYRConsultaCiudadanoMS/captcha/libre-captcha/generar";
 
   const res = await axios.get(url, {
     headers: {
@@ -147,21 +129,25 @@ async function generarCaptcha() {
 
   const { id, imagen } = res.data;
 
+  if (!id || !imagen) {
+    throw new Error("No fue posible generar el captcha del RUNT.");
+  }
+
   const base64 = imagen.replace(/^data:image\/png;base64,/, "");
-  fs.writeFileSync("captcha.png", base64, "base64");
+  fs.writeFileSync(CAPTCHA_FILE, base64, "base64");
 
   return { id };
 }
 
 async function leerCaptcha() {
-  const result = await Tesseract.recognize("captcha.png", "eng", {
+  const result = await Tesseract.recognize(CAPTCHA_FILE, "eng", {
     tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
   });
 
   return result.data.text.replace(/[^a-zA-Z0-9]/g, "").trim();
 }
 
-async function consultarRunt(cedula, captcha, idLibreCaptcha) {
+async function consultarAuthRunt(cedula, captcha, idLibreCaptcha) {
   const url = "https://runtproapi.runt.gov.co/CYRConsultaCiudadanoMS/auth";
 
   const payload = {
@@ -188,7 +174,8 @@ async function consultarRunt(cedula, captcha, idLibreCaptcha) {
 }
 
 async function consultarLicencias(token) {
-  const url = "https://runtproapi.runt.gov.co/CYRConsultaCiudadanoMS/consulta-ciudadano/licencias";
+  const url =
+    "https://runtproapi.runt.gov.co/CYRConsultaCiudadanoMS/consulta-ciudadano/licencias";
 
   const res = await axios.get(url, {
     headers: {
@@ -206,27 +193,27 @@ async function consultarLicencias(token) {
 
 async function consultarConReintentos(cedula) {
   for (let intento = 1; intento <= CONFIG.maxIntentosOCR; intento++) {
-    log(`\n${c.gray}[Intento ${intento}/${CONFIG.maxIntentosOCR}]${c.reset} Generando captcha...`);
+    console.log(`[RUNT] Intento ${intento}/${CONFIG.maxIntentosOCR}`);
 
     const captchaData = await generarCaptcha();
 
     const delay = randomMs(CONFIG.delayMinMs, CONFIG.delayMaxMs);
-    log(`${c.dim}Esperando ${(delay / 1000).toFixed(1)} segundos antes de consultar...${c.reset}`);
+    console.log(`[RUNT] Esperando ${(delay / 1000).toFixed(1)} segundos...`);
     await sleep(delay);
 
     const captchaTexto = await leerCaptcha();
-    log(`${c.dim}Captcha leído:${c.reset} ${c.cyan}${captchaTexto}${c.reset}`);
+    console.log(`[RUNT] Captcha leído: ${captchaTexto}`);
 
     if (!captchaTexto || captchaTexto.length < 4) {
-      log(`${c.yellow}OCR débil. Reintentando...${c.reset}`);
+      console.log("[RUNT] OCR débil. Reintentando...");
       continue;
     }
 
     try {
-      const auth = await consultarRunt(cedula, captchaTexto, captchaData.id);
+      const auth = await consultarAuthRunt(cedula, captchaTexto, captchaData.id);
 
       if (auth?.error === true) {
-        log(`${c.yellow}Captcha o consulta rechazada. Reintentando...${c.reset}`);
+        console.log("[RUNT] Captcha o consulta rechazada. Reintentando...");
         continue;
       }
 
@@ -242,89 +229,86 @@ async function consultarConReintentos(cedula) {
       };
     } catch (error) {
       if (error.response) {
-        log(`${c.yellow}Error HTTP ${error.response.status}. Reintentando si aplica...${c.reset}`);
+        console.log(`[RUNT] Error HTTP ${error.response.status}`);
       } else {
-        log(`${c.yellow}${error.message}${c.reset}`);
+        console.log(`[RUNT] ${error.message}`);
       }
     }
   }
 
-  throw new Error("No fue posible consultar después de varios intentos.");
+  throw new Error("No fue posible consultar RUNT después de varios intentos.");
 }
 
 function obtenerLicenciasActivas(licencias) {
   if (!Array.isArray(licencias)) return [];
 
-  return licencias.filter(lic => lic.estadoLicencia === "ACTIVA");
+  return licencias.filter((lic) => lic.estadoLicencia === "ACTIVA");
 }
 
-function imprimirResultado(cedula, data, desdeCache = false) {
-  const { auth, licencias } = data;
+async function consultarRuntPorCedula(cedula) {
+  validarLimiteDiario();
 
-  log("\n" + line("═"));
-  log(`${c.green}${c.bold}✅ Consulta RUNT realizada${c.reset}`);
-  log(line("═"));
+  const cache = buscarCache(cedula);
 
-  if (desdeCache) {
-    log(`${c.yellow}Resultado tomado desde cache.${c.reset}`);
+  if (cache) {
+    return {
+      desdeCache: true,
+      data: cache.resultado,
+    };
   }
 
-  log(`\n${c.bold}Cédula:${c.reset} ${cedula}`);
-  log(`${c.bold}Nombre:${c.reset} ${auth?.nombres || ""} ${auth?.apellidos || ""}`);
-  log(`${c.bold}Estado conductor:${c.reset} ${auth?.estadoConductor || "—"}`);
-  log(`${c.bold}Estado persona:${c.reset} ${auth?.estadoPersona || "—"}`);
-  log(`${c.bold}Tiene licencias:${c.reset} ${auth?.tieneLicencias ? "Sí" : "No"}`);
+  const resultado = await consultarConReintentos(cedula);
+
+  sumarConsultaDiaria();
+  guardarCache(cedula, resultado);
+
+  return {
+    desdeCache: false,
+    data: resultado,
+  };
+}
+
+function formatearResultadoWhatsApp(cedula, resultado) {
+  const { auth, licencias } = resultado.data;
+
+  let mensaje = `✅ *Consulta RUNT realizada*\n\n`;
+
+  if (resultado.desdeCache) {
+    mensaje += `ℹ️ Resultado tomado desde consulta reciente.\n\n`;
+  }
+
+  mensaje += `🪪 *Cédula:* ${cedula}\n`;
+  mensaje += `👤 *Nombre:* ${auth?.nombres || ""} ${auth?.apellidos || ""}\n`;
+  mensaje += `🚦 *Estado conductor:* ${auth?.estadoConductor || "—"}\n`;
+  mensaje += `👥 *Estado persona:* ${auth?.estadoPersona || "—"}\n`;
+  mensaje += `📄 *Tiene licencias:* ${auth?.tieneLicencias ? "Sí" : "No"}\n`;
 
   const activas = obtenerLicenciasActivas(licencias);
 
   if (activas.length === 0) {
-    log(`\n${c.yellow}⚠️ No se encontraron licencias activas.${c.reset}`);
-    log("\n" + line("═") + "\n");
-    return;
+    mensaje += `\n⚠️ No se encontraron licencias activas.`;
+    return mensaje;
   }
 
-  log(`\n${line()}`);
-  log(`${c.bold}🚗 Licencias activas:${c.reset}`);
-  log(line());
+  mensaje += `\n🚗 *Licencias activas:*\n`;
 
   for (const lic of activas) {
-    log(`\n✅ ${c.bold}Licencia:${c.reset} ${lic.numeroLicencia || "—"}`);
-    log(`   ${c.dim}Expide:${c.reset} ${lic.otExpide || "—"}`);
-    log(`   ${c.dim}Estado:${c.reset} ${lic.estadoLicencia || "—"}`);
+    mensaje += `\n✅ *Licencia:* ${lic.numeroLicencia || "—"}\n`;
+    mensaje += `🏢 *Expide:* ${lic.otExpide || "—"}\n`;
+    mensaje += `📌 *Estado:* ${lic.estadoLicencia || "—"}\n`;
 
     if (Array.isArray(lic.detalleLicencia)) {
       for (const det of lic.detalleLicencia) {
-        log(`\n   🚘 ${c.bold}Categoría:${c.reset} ${c.cyan}${det.categoria || "—"}${c.reset}`);
-        log(`      ${c.dim}Vence:${c.reset} ${formatearFecha(det.fechaVencimiento)}`);
+        mensaje += `\n🚘 *Categoría:* ${det.categoria || "—"}\n`;
+        mensaje += `📅 *Vence:* ${formatearFecha(det.fechaVencimiento)}\n`;
       }
     }
   }
 
-  log("\n" + line("═") + "\n");
+  return mensaje;
 }
 
-async function main() {
-  try {
-    validarLimiteDiario();
-
-    const cache = buscarCache(CEDULA);
-
-    if (cache) {
-      imprimirResultado(CEDULA, cache.resultado, true);
-      return;
-    }
-
-    log(`${c.bold}Consultando RUNT para cédula:${c.reset} ${CEDULA}`);
-
-    const resultado = await consultarConReintentos(CEDULA);
-
-    sumarConsultaDiaria();
-    guardarCache(CEDULA, resultado);
-
-    imprimirResultado(CEDULA, resultado, false);
-  } catch (error) {
-    log(`\n${c.red}${c.bold}❌ Error:${c.reset} ${error.message}\n`);
-  }
-}
-
-main();     
+module.exports = {
+  consultarRuntPorCedula,
+  formatearResultadoWhatsApp,
+};
