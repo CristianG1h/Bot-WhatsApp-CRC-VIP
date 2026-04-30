@@ -283,27 +283,123 @@ function formatearResultadoWhatsApp(cedula, resultado) {
   mensaje += `👥 *Estado persona:* ${auth?.estadoPersona || "—"}\n`;
   mensaje += `📄 *Tiene licencias:* ${auth?.tieneLicencias ? "Sí" : "No"}\n`;
 
-  const activas = obtenerLicenciasActivas(licencias);
+  const categorias = obtenerCategoriasLicencia(licencias);
 
-  if (activas.length === 0) {
-    mensaje += `\n⚠️ No se encontraron licencias activas.`;
+  if (categorias.length === 0) {
+    mensaje += `\n⚠️ No se encontraron categorías de licencia registradas.\n`;
+    mensaje += `\n💬 Si deseas iniciar el proceso por primera vez, un asesor puede ayudarte con la información completa.`;
     return mensaje;
   }
 
-  mensaje += `\n🚗 *Licencias activas:*\n`;
+  mensaje += `\n🚗 *Categorías encontradas:*\n`;
 
-  for (const lic of activas) {
-    mensaje += `\n✅ *Licencia:* ${lic.numeroLicencia || "—"}\n`;
-    mensaje += `🏢 *Expide:* ${lic.otExpide || "—"}\n`;
-    mensaje += `📌 *Estado:* ${lic.estadoLicencia || "—"}\n`;
+  for (const cat of categorias) {
+    mensaje += `\n✅ *Categoría:* ${cat.categoria}\n`;
+    mensaje += `📌 *Estado:* ${cat.estadoLicencia}\n`;
+    mensaje += `📅 *Vence:* ${formatearFecha(cat.fechaVencimiento)}\n`;
 
-    if (Array.isArray(lic.detalleLicencia)) {
-      for (const det of lic.detalleLicencia) {
-        mensaje += `\n🚘 *Categoría:* ${det.categoria || "—"}\n`;
-        mensaje += `📅 *Vence:* ${formatearFecha(det.fechaVencimiento)}\n`;
-      }
+    if (cat.estadoCalculado === "VENCIDA") {
+      mensaje += `⚠️ Estado: *Vencida*\n`;
+    } else if (cat.estadoCalculado === "PROXIMA") {
+      mensaje += `⏳ Estado: *Próxima a vencer*\n`;
+    } else {
+      mensaje += `✅ Estado: *Activa*\n`;
     }
   }
+
+  mensaje += generarOfertaSegunCategorias(categorias);
+
+  return mensaje;
+}
+
+function obtenerCategoriasLicencia(licencias) {
+  const categorias = [];
+
+  if (!Array.isArray(licencias)) return categorias;
+
+  for (const lic of licencias) {
+    if (!Array.isArray(lic.detalleLicencia)) continue;
+
+    for (const det of lic.detalleLicencia) {
+      if (!det.categoria) continue;
+
+      categorias.push({
+        categoria: String(det.categoria).toUpperCase(),
+        fechaVencimiento: det.fechaVencimiento,
+        estadoLicencia: lic.estadoLicencia || "—",
+        estadoCalculado: calcularEstadoVencimiento(det.fechaVencimiento),
+      });
+    }
+  }
+
+  return categorias;
+}
+
+function calcularEstadoVencimiento(fechaIso) {
+  if (!fechaIso) return "SIN_FECHA";
+
+  const hoy = new Date();
+  const vence = new Date(fechaIso);
+
+  hoy.setHours(0, 0, 0, 0);
+  vence.setHours(0, 0, 0, 0);
+
+  const diferenciaDias = Math.ceil((vence - hoy) / (1000 * 60 * 60 * 24));
+
+  if (diferenciaDias < 0) return "VENCIDA";
+  if (diferenciaDias <= 30) return "PROXIMA";
+
+  return "ACTIVA";
+}
+
+function esCategoriaMoto(categoria) {
+  return categoria.startsWith("A");
+}
+
+function esCategoriaCarro(categoria) {
+  return categoria.startsWith("B") || categoria.startsWith("C");
+}
+
+function generarOfertaSegunCategorias(categorias) {
+  const tieneMoto = categorias.some((cat) => esCategoriaMoto(cat.categoria));
+  const tieneCarro = categorias.some((cat) => esCategoriaCarro(cat.categoria));
+
+  const tieneVencida = categorias.some((cat) => cat.estadoCalculado === "VENCIDA");
+  const tieneProxima = categorias.some((cat) => cat.estadoCalculado === "PROXIMA");
+  const tieneActiva = categorias.some((cat) => cat.estadoCalculado === "ACTIVA");
+
+  let mensaje = `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  mensaje += `🎁 *Oferta recomendada para ti*\n\n`;
+
+  if (tieneMoto && tieneCarro) {
+    mensaje += `Vemos que tienes categorías de *moto y carro* registradas en RUNT. 🏍️🚗\n\n`;
+    mensaje += `El valor normal para renovar dos categorías es de *$320.000*.\n`;
+    mensaje += `Pero por esta semana tienes un descuento especial y pagas solo *$250.000*.\n`;
+  } else if (tieneMoto) {
+    mensaje += `Vemos que tienes categoría de *moto* registrada en RUNT. 🏍️\n\n`;
+    mensaje += `El valor normal para renovar una categoría es de *$240.000*.\n`;
+    mensaje += `Pero por esta semana tienes un descuento especial y pagas solo *$180.000*.\n`;
+  } else if (tieneCarro) {
+    mensaje += `Vemos que tienes categoría de *carro* registrada en RUNT. 🚗\n\n`;
+    mensaje += `El valor normal para renovar una categoría es de *$240.000*.\n`;
+    mensaje += `Pero por esta semana tienes un descuento especial y pagas solo *$180.000*.\n`;
+  } else {
+    mensaje += `Podemos ayudarte a revisar tu caso y orientarte con el trámite correcto. ✅\n`;
+  }
+
+  mensaje += `\n`;
+
+  if (tieneVencida) {
+    mensaje += `⚠️ También vemos que tienes una categoría vencida o con fecha vencida, por eso es buen momento para realizar la renovación.\n`;
+  } else if (tieneProxima) {
+    mensaje += `⏳ Tienes una categoría próxima a vencer. Te recomendamos aprovechar el descuento antes de que expire.\n`;
+  } else if (tieneActiva) {
+    mensaje += `✅ Tus categorías aparecen activas. Si deseas renovar o adelantar el proceso, esta semana puedes aprovechar el descuento.\n`;
+  }
+
+  mensaje += `\n¿Deseas que te ayudemos a agendar tu proceso?\n\n`;
+  mensaje += `1️⃣ Sí, quiero agendar\n`;
+  mensaje += `2️⃣ No por ahora\n`;
 
   return mensaje;
 }

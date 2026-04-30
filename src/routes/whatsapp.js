@@ -222,14 +222,14 @@ async function handleMessage(from, text) {
 
     try {
       const resultado = await consultarRuntPorCedula(text);
-      const respuesta = formatearResultadoWhatsApp(text, resultado);
+const respuesta = formatearResultadoWhatsApp(text, resultado);
 
-      await sendText(from, respuesta);
+await sendText(from, respuesta);
 
-      await sendText(
-        from,
-        "✅ Gracias. Un asesor de VIP CRC Galerías podrá ayudarte a continuar con el proceso."
-      );
+updateSession(from, {
+  step: "AGENDAR",
+  cedula: text
+});
 
       resetSession(from);
     } catch (error) {
@@ -242,6 +242,48 @@ async function handleMessage(from, text) {
 
     return;
   }
+  if (session.step === "AGENDAR") {
+  if (msg === "1" || msg.includes("si") || msg.includes("sí") || msg.includes("agendar")) {
+    await sendText(
+      from,
+      `Perfecto ✅
+
+Un asesor de *VIP CRC Galerías* te escribirá para ayudarte con el agendamiento.
+
+Por favor déjanos:
+👤 Nombre completo
+📅 Día en el que deseas asistir
+🚗 Categoría que deseas renovar o tramitar`
+    );
+
+    resetSession(from);
+    return;
+  }
+
+  if (msg === "2" || msg.includes("no")) {
+    await sendText(
+      from,
+      `Está bien 🙌
+
+Recuerda que el descuento está disponible solo por esta semana.
+
+Cuando desees continuar, escribe *menu* y con gusto te ayudamos.`
+    );
+
+    resetSession(from);
+    return;
+  }
+
+  await sendText(
+    from,
+    `¿Deseas que te ayudemos a agendar tu proceso?
+
+1️⃣ Sí, quiero agendar
+2️⃣ No por ahora`
+  );
+
+  return;
+}
 
   resetSession(from);
   updateSession(from, { step: "MENU_PRINCIPAL" });

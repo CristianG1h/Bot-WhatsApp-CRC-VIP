@@ -6,7 +6,8 @@ function getSession(phone) {
       step: "MENU_PRINCIPAL",
       tramite: null,
       comparendos: null,
-      asistencia: null
+      asistencia: null,
+      cedula: null
     });
   }
 
