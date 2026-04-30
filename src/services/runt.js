@@ -375,7 +375,7 @@ function seleccionarCategoriasPrincipales(categorias) {
     }
   }
 
-  return normalizadas.slice(0, 2);
+  return normalizadas.slice(0, 3);
 }
 
 function calcularEstadoVencimiento(fechaIso) {
@@ -409,9 +409,20 @@ function generarOfertaSegunCategorias(categorias) {
 
   const tieneVencida = categorias.some((cat) => cat.estadoCalculado === "VENCIDA");
   const tieneProxima = categorias.some((cat) => cat.estadoCalculado === "PROXIMA");
-  const tieneActiva = categorias.some((cat) => cat.estadoCalculado === "ACTIVA");
 
   let mensaje = `\n━━━━━━━━━━━━━━━━━━━━\n`;
+
+  // Si todo está activo y NO está próximo a vencer, no vender renovación
+  if (!tieneVencida && !tieneProxima) {
+    mensaje += `✅ *Tus categorías aparecen activas y no están próximas a vencer.*\n\n`;
+    mensaje += `Por ahora no parece necesario renovar la licencia.\n\n`;
+    mensaje += `Si deseas realizar otro trámite, resolver dudas o confirmar información, un asesor de *VIP CRC Galerías* puede ayudarte. 🙌\n\n`;
+    mensaje += `1️⃣ Hablar con asesor\n`;
+    mensaje += `2️⃣ Volver al menú principal`;
+
+    return mensaje;
+  }
+
   mensaje += `🎁 *Oferta recomendada para ti*\n\n`;
 
   if (tieneMoto && tieneCarro) {
@@ -426,18 +437,14 @@ function generarOfertaSegunCategorias(categorias) {
     mensaje += `Vemos que tienes categoría de *carro* registrada en RUNT. 🚗\n\n`;
     mensaje += `El valor normal para renovar una categoría es de *$240.000*.\n`;
     mensaje += `Pero por esta semana tienes un descuento especial y pagas solo *$180.000*.\n`;
-  } else {
-    mensaje += `Podemos ayudarte a revisar tu caso y orientarte con el trámite correcto. ✅\n`;
   }
 
   mensaje += `\n`;
 
   if (tieneVencida) {
-    mensaje += `⚠️ También vemos que tienes una categoría vencida o con fecha vencida, por eso es buen momento para realizar la renovación.\n`;
+    mensaje += `⚠️ Vemos que tienes una categoría vencida o con fecha vencida. Es buen momento para realizar la renovación.\n`;
   } else if (tieneProxima) {
     mensaje += `⏳ Tienes una categoría próxima a vencer. Te recomendamos aprovechar el descuento antes de que expire.\n`;
-  } else if (tieneActiva) {
-    mensaje += `✅ Tus categorías aparecen activas. Si deseas renovar o adelantar el proceso, esta semana puedes aprovechar el descuento.\n`;
   }
 
   mensaje += `\n¿Deseas que te ayudemos a agendar tu proceso?\n\n`;
