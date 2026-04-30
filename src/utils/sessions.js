@@ -3,7 +3,7 @@ const sessions = new Map();
 function getSession(phone) {
   if (!sessions.has(phone)) {
     sessions.set(phone, {
-      step: "MENU",
+      step: "MENU_PRINCIPAL",
       tramite: null,
       comparendos: null,
       asistencia: null

@@ -7,6 +7,7 @@ const { consultarRuntPorCedula, formatearResultadoWhatsApp } = require("../servi
 const { getSession, updateSession, resetSession } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
+const { getMessage } = require("../utils/messages");
 
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -50,36 +51,122 @@ async function handleMessage(from, text) {
   const session = getSession(from);
   const msg = text.toLowerCase();
 
-  if (msg === "menu" || msg === "inicio" || msg === "hola") {
+  if (["menu", "inicio", "hola", "buenas", "volver"].includes(msg)) {
     resetSession(from);
-    await sendText(from, menuInicial());
+    updateSession(from, { step: "MENU_PRINCIPAL" });
+    await sendText(from, menuPrincipal());
     return;
   }
 
   if (session.step === "MENU") {
-    await sendText(from, menuInicial());
-    updateSession(from, { step: "TRAMITE" });
+    updateSession(from, { step: "MENU_PRINCIPAL" });
+    await sendText(from, menuPrincipal());
     return;
   }
 
-  if (session.step === "TRAMITE") {
-    const opciones = {
-      "1": "Renovación",
-      "2": "Refrendación",
-      "3": "Primera vez"
-    };
-
-    if (!opciones[text]) {
-      await sendText(from, "Por favor responde con una opción válida:\n\n1️⃣ Renovación\n2️⃣ Refrendación\n3️⃣ Primera vez");
+  if (session.step === "MENU_PRINCIPAL") {
+    if (msg === "1") {
+      updateSession(from, { step: "MENU_TRAMITE" });
+      await sendText(from, menuTramite());
       return;
     }
 
-    updateSession(from, {
-      tramite: opciones[text],
-      step: "COMPARENDO"
-    });
+    if (msg === "2") {
+      updateSession(from, { step: "MENU_INFORMACION" });
+      await sendText(from, menuInformacion());
+      return;
+    }
 
-    await sendText(from, "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+    if (msg === "3") {
+      resetSession(from);
+      await sendText(
+        from,
+        "Perfecto ✅ Un asesor de VIP CRC Galerías continuará con tu atención. Por favor déjanos tu nombre completo y el trámite que deseas realizar."
+      );
+      return;
+    }
+
+    await sendText(from, menuPrincipal());
+    return;
+  }
+
+  if (session.step === "MENU_TRAMITE") {
+    if (msg === "1") {
+      updateSession(from, {
+        tramite: "Renovación / Refrendación",
+        step: "COMPARENDO"
+      });
+
+      await sendText(from, "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+      return;
+    }
+
+    if (msg === "2") {
+      updateSession(from, {
+        tramite: "Primera vez",
+        step: "COMPARENDO"
+      });
+
+      await sendText(from, "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+      return;
+    }
+
+    if (msg === "3") {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL" });
+      await sendText(from, menuPrincipal());
+      return;
+    }
+
+    await sendText(from, menuTramite());
+    return;
+  }
+
+  if (session.step === "MENU_INFORMACION") {
+    if (msg === "1") {
+      await sendText(from, getMessage("precios"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "2") {
+      await sendText(from, getMessage("duracion"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "3") {
+      await sendText(from, getMessage("horarios"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "4") {
+      await sendText(from, getMessage("pagos"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "5") {
+      await sendText(from, getMessage("proceso"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "6") {
+      await sendText(from, getMessage("ubicacion"));
+      await sendText(from, menuInformacionCorto());
+      return;
+    }
+
+    if (msg === "7") {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL" });
+      await sendText(from, menuPrincipal());
+      return;
+    }
+
+    await sendText(from, menuInformacion());
     return;
   }
 
@@ -90,13 +177,13 @@ async function handleMessage(from, text) {
       "3": "No estoy seguro"
     };
 
-    if (!opciones[text]) {
+    if (!opciones[msg]) {
       await sendText(from, "Por favor responde:\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
       return;
     }
 
     updateSession(from, {
-      comparendos: opciones[text],
+      comparendos: opciones[msg],
       step: "ASISTENCIA"
     });
 
@@ -111,13 +198,13 @@ async function handleMessage(from, text) {
       "3": "Otro día"
     };
 
-    if (!opciones[text]) {
+    if (!opciones[msg]) {
       await sendText(from, "Por favor responde:\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día");
       return;
     }
 
     updateSession(from, {
-      asistencia: opciones[text],
+      asistencia: opciones[msg],
       step: "CEDULA"
     });
 
@@ -139,29 +226,72 @@ async function handleMessage(from, text) {
 
       await sendText(from, respuesta);
 
-      await sendText(from, "✅ Gracias. Un asesor de VIP CRC Galerías podrá ayudarte a continuar con el proceso.");
+      await sendText(
+        from,
+        "✅ Gracias. Un asesor de VIP CRC Galerías podrá ayudarte a continuar con el proceso."
+      );
+
       resetSession(from);
     } catch (error) {
       console.error("❌ Error RUNT:", error.message);
-      await sendText(from, "⚠️ En este momento no fue posible consultar RUNT. Por favor intenta más tarde o escribe *asesor*.");
+      await sendText(
+        from,
+        "⚠️ En este momento no fue posible consultar RUNT. Por favor intenta más tarde o escribe *asesor*."
+      );
     }
 
     return;
   }
 
-  await sendText(from, menuInicial());
+  resetSession(from);
+  updateSession(from, { step: "MENU_PRINCIPAL" });
+  await sendText(from, menuPrincipal());
 }
 
-function menuInicial() {
-  return `Hola 👋 gracias por escribir a VIP CRC Galerías.
+function menuPrincipal() {
+  return `Hola 👋 gracias por escribir a *VIP CRC Galerías*.
 
-Para ayudarte más rápido, responde con el número de la opción:
+¿Cómo podemos ayudarte hoy?
 
-1️⃣ Renovación
-2️⃣ Refrendación
-3️⃣ Primera vez
+1️⃣ Quiero sacar o renovar mi licencia
+2️⃣ Quiero información del proceso
+3️⃣ Hablar con asesor
 
 También puedes escribir *menu* para volver al inicio.`;
+}
+
+function menuTramite() {
+  return `Perfecto 🚗🏍️
+
+¿Qué trámite deseas realizar?
+
+1️⃣ Renovación / Refrendación
+2️⃣ Primera vez
+3️⃣ Volver al menú principal`;
+}
+
+function menuInformacion() {
+  return `Claro ✅ ¿Qué información deseas consultar?
+
+1️⃣ Precios y descuentos
+2️⃣ Duración del proceso
+3️⃣ Horarios de atención
+4️⃣ Medios de pago
+5️⃣ Proceso del examen
+6️⃣ Ubicación
+7️⃣ Volver al menú principal`;
+}
+
+function menuInformacionCorto() {
+  return `¿Deseas consultar algo más?
+
+1️⃣ Precios y descuentos
+2️⃣ Duración del proceso
+3️⃣ Horarios
+4️⃣ Medios de pago
+5️⃣ Proceso del examen
+6️⃣ Ubicación
+7️⃣ Volver al inicio`;
 }
 
 module.exports = router;
