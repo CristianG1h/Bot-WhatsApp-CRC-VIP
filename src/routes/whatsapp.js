@@ -15,21 +15,50 @@ const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
 
-/* =========================
-   RESPONDER META O TWILIO
-========================= */
-
 async function responder(to, body) {
+  const texto = String(body || "");
+
   if (String(to).startsWith("whatsapp:")) {
-    return sendTwilioText(to, body);
+    const partes = dividirMensaje(texto, 1300);
+
+    for (const parte of partes) {
+      await sendTwilioText(to, parte);
+      await esperar(700);
+    }
+
+    return;
   }
 
-  return sendText(to, body);
+  return sendText(to, texto);
 }
 
-/* =========================
-   WEBHOOK META WHATSAPP
-========================= */
+function dividirMensaje(texto, max = 1300) {
+  if (texto.length <= max) return [texto];
+
+  const partes = [];
+  let restante = texto;
+
+  while (restante.length > max) {
+    let corte = restante.lastIndexOf("\n", max);
+
+    if (corte < 400) {
+      corte = max;
+    }
+
+    partes.push(restante.slice(0, corte).trim());
+    restante = restante.slice(corte).trim();
+  }
+
+  if (restante.length > 0) {
+    partes.push(restante);
+  }
+
+  return partes;
+}
+
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -64,10 +93,6 @@ router.post("/", async (req, res) => {
   }
 });
 
-/* =========================
-   WEBHOOK TWILIO WHATSAPP
-========================= */
-
 router.post("/twilio", async (req, res) => {
   res.status(200).send("OK");
 
@@ -82,10 +107,6 @@ router.post("/twilio", async (req, res) => {
     console.error("❌ Error webhook Twilio:", error.message);
   }
 });
-
-/* =========================
-   FLUJO PRINCIPAL DEL BOT
-========================= */
 
 async function procesarMensaje(from, text) {
   const session = getSession(from);
@@ -312,17 +333,17 @@ async function procesarMensaje(from, text) {
     return;
   }
 
-if (session.step === "AGENDAR") {
-  if (
-    msg === "1" ||
-    msg.includes("si") ||
-    msg.includes("sí") ||
-    msg.includes("agendar") ||
-    msg.includes("asesor")
-  ) {
-    await responder(
-      from,
-      `Perfecto ✅
+  if (session.step === "AGENDAR") {
+    if (
+      msg === "1" ||
+      msg.includes("si") ||
+      msg.includes("sí") ||
+      msg.includes("agendar") ||
+      msg.includes("asesor")
+    ) {
+      await responder(
+        from,
+        `Perfecto ✅
 
 Un asesor de *VIP CRC Galerías* continuará con tu atención.
 
@@ -330,33 +351,34 @@ Por favor déjanos:
 👤 Nombre completo
 📅 Día en el que deseas asistir o ser contactado
 🚗 Trámite que deseas realizar`
-    );
+      );
 
-    resetSession(from);
-    return;
-  }
+      resetSession(from);
+      return;
+    }
 
-  if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL" });
-    await responder(from, menuPrincipal());
-    return;
-  }
+    if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL" });
+      await responder(from, menuPrincipal());
+      return;
+    }
 
-  await responder(
-    from,
-    `¿Deseas continuar?
+    await responder(
+      from,
+      `¿Deseas continuar?
 
 1️⃣ Hablar con asesor
 2️⃣ Volver al menú principal`
-  );
+    );
 
-  return;
+    return;
+  }
+
+  resetSession(from);
+  updateSession(from, { step: "MENU_PRINCIPAL" });
+  await responder(from, menuPrincipal());
 }
-
-/* =========================
-   MENÚS
-========================= */
 
 function menuPrincipal() {
   return `Hola 👋 gracias por escribir a *VIP CRC Galerías*.
@@ -402,51 +424,6 @@ function menuInformacionCorto() {
 5️⃣ Proceso del examen
 6️⃣ Ubicación
 7️⃣ Volver al inicio`;
-}
-
-async function responder(to, body) {
-  const texto = String(body || "");
-
-  if (String(to).startsWith("whatsapp:")) {
-    const partes = dividirMensaje(texto, 1300);
-
-    for (const parte of partes) {
-      await sendTwilioText(to, parte);
-      await esperar(700);
-    }
-
-    return;
-  }
-
-  return sendText(to, texto);
-}
-
-function dividirMensaje(texto, max = 1300) {
-  if (texto.length <= max) return [texto];
-
-  const partes = [];
-  let restante = texto;
-
-  while (restante.length > max) {
-    let corte = restante.lastIndexOf("\n", max);
-
-    if (corte < 400) {
-      corte = max;
-    }
-
-    partes.push(restante.slice(0, corte).trim());
-    restante = restante.slice(corte).trim();
-  }
-
-  if (restante.length > 0) {
-    partes.push(restante);
-  }
-
-  return partes;
-}
-
-function esperar(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 module.exports = router;
