@@ -291,7 +291,7 @@ function formatearResultadoWhatsApp(cedula, resultado) {
     return mensaje;
   }
 
-  mensaje += `\n🚗 *Categorías encontradas:*\n`;
+  mensaje += `\n🚗 *Categorías principales encontradas:*\n`;
 
   for (const cat of categorias) {
     mensaje += `\n✅ *Categoría:* ${cat.categoria}\n`;
@@ -327,10 +327,46 @@ function obtenerCategoriasLicencia(licencias) {
         categoria: String(det.categoria).toUpperCase(),
         fechaVencimiento: det.fechaVencimiento,
         estadoLicencia: lic.estadoLicencia || "—",
+        numeroLicencia: lic.numeroLicencia || "—",
+        expide: lic.otExpide || "—",
         estadoCalculado: calcularEstadoVencimiento(det.fechaVencimiento),
       });
     }
   }
+
+  return seleccionarCategoriasPrincipales(categorias);
+}
+
+function seleccionarCategoriasPrincipales(categorias) {
+  const prioridad = {
+    VENCIDA: 1,
+    PROXIMA: 2,
+    ACTIVA: 3,
+    SIN_FECHA: 4,
+  };
+
+  const normalizadas = [];
+
+  for (const cat of categorias) {
+    const tipo = esCategoriaMoto(cat.categoria) ? "MOTO" : esCategoriaCarro(cat.categoria) ? "CARRO" : cat.categoria;
+
+    const existente = normalizadas.find((item) => item.tipo === tipo);
+
+    if (!existente) {
+      normalizadas.push({ ...cat, tipo });
+      continue;
+    }
+
+    const prioridadNueva = prioridad[cat.estadoCalculado] || 9;
+    const prioridadActual = prioridad[existente.estadoCalculado] || 9;
+
+    if (prioridadNueva < prioridadActual) {
+      Object.assign(existente, { ...cat, tipo });
+    }
+  }
+
+  return normalizadas.slice(0, 2);
+}
 
   return categorias;
 }
