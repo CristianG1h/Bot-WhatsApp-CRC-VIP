@@ -10,9 +10,9 @@ const CAPTCHA_FILE = path.join(process.cwd(), "captcha.png");
 const CONFIG = {
   cacheDias: 15,
   maxConsultasDia: 150,
-  maxIntentosOCR: 3,
-  delayMinMs: 8000,
-  delayMaxMs: 20000,
+  maxIntentosOCR: 5,
+  delayMinMs: 5000,
+  delayMaxMs: 12000,
 };
 
 function sleep(ms) {
@@ -204,7 +204,7 @@ async function consultarConReintentos(cedula) {
     const captchaTexto = await leerCaptcha();
     console.log(`[RUNT] Captcha leído: ${captchaTexto}`);
 
-    if (!captchaTexto || captchaTexto.length < 4) {
+    if (!captchaTexto || captchaTexto.length < 5 || captchaTexto.length > 6) {
       console.log("[RUNT] OCR débil. Reintentando...");
       continue;
     }
