@@ -3,11 +3,33 @@ const router = express.Router();
 
 const { VERIFY_TOKEN } = require("../config");
 const { sendText } = require("../services/whatsapp");
-const { consultarRuntPorCedula, formatearResultadoWhatsApp } = require("../services/runt");
+const { sendTwilioText } = require("../services/twilio");
+
+const {
+  consultarRuntPorCedula,
+  formatearResultadoWhatsApp,
+} = require("../services/runt");
+
 const { getSession, updateSession, resetSession } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
+
+/* =========================
+   RESPONDER META O TWILIO
+========================= */
+
+async function responder(to, body) {
+  if (String(to).startsWith("whatsapp:")) {
+    return sendTwilioText(to, body);
+  }
+
+  return sendText(to, body);
+}
+
+/* =========================
+   WEBHOOK META WHATSAPP
+========================= */
 
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -34,59 +56,83 @@ router.post("/", async (req, res) => {
     const from = message.from;
     const text = limpiarTexto(message.text?.body);
 
-    if (!text) return;
+    if (!from || !text) return;
 
-    if (isRateLimited(from)) {
-      await sendText(from, "⚠️ Has enviado muchos mensajes seguidos. Por favor espera un momento.");
-      return;
-    }
-
-    await handleMessage(from, text);
+    await procesarMensaje(from, text);
   } catch (error) {
-    console.error("❌ Error webhook:", error.message);
+    console.error("❌ Error webhook Meta:", error.message);
   }
 });
 
-async function handleMessage(from, text) {
-  const session = getSession(from);
-  const msg = text.toLowerCase();
+/* =========================
+   WEBHOOK TWILIO WHATSAPP
+========================= */
 
-  if (["menu", "inicio", "hola", "buenas", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL" });
-    await sendText(from, menuPrincipal());
+router.post("/twilio", async (req, res) => {
+  res.status(200).send("OK");
+
+  try {
+    const from = req.body.From;
+    const text = limpiarTexto(req.body.Body);
+
+    if (!from || !text) return;
+
+    await procesarMensaje(from, text);
+  } catch (error) {
+    console.error("❌ Error webhook Twilio:", error.message);
+  }
+});
+
+/* =========================
+   FLUJO PRINCIPAL DEL BOT
+========================= */
+
+async function procesarMensaje(from, text) {
+  const session = getSession(from);
+  const msg = text.toLowerCase().trim();
+
+  console.log("📩 Mensaje recibido:", text);
+  console.log("👤 Usuario:", from);
+  console.log("➡️ Paso actual:", session.step);
+
+  if (isRateLimited(from)) {
+    await responder(
+      from,
+      "⚠️ Has enviado muchos mensajes seguidos. Por favor espera un momento."
+    );
     return;
   }
 
-  if (session.step === "MENU") {
+  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
     updateSession(from, { step: "MENU_PRINCIPAL" });
-    await sendText(from, menuPrincipal());
+    await responder(from, menuPrincipal());
     return;
   }
 
   if (session.step === "MENU_PRINCIPAL") {
     if (msg === "1") {
       updateSession(from, { step: "MENU_TRAMITE" });
-      await sendText(from, menuTramite());
+      await responder(from, menuTramite());
       return;
     }
 
     if (msg === "2") {
       updateSession(from, { step: "MENU_INFORMACION" });
-      await sendText(from, menuInformacion());
+      await responder(from, menuInformacion());
       return;
     }
 
-    if (msg === "3") {
+    if (msg === "3" || msg.includes("asesor")) {
       resetSession(from);
-      await sendText(
+      await responder(
         from,
-        "Perfecto ✅ Un asesor de VIP CRC Galerías continuará con tu atención. Por favor déjanos tu nombre completo y el trámite que deseas realizar."
+        "Perfecto ✅ Un asesor de *VIP CRC Galerías* continuará con tu atención. Por favor déjanos tu nombre completo y el trámite que deseas realizar."
       );
       return;
     }
 
-    await sendText(from, menuPrincipal());
+    await responder(from, menuPrincipal());
     return;
   }
 
@@ -94,147 +140,170 @@ async function handleMessage(from, text) {
     if (msg === "1") {
       updateSession(from, {
         tramite: "Renovación / Refrendación",
-        step: "COMPARENDO"
+        step: "COMPARENDO",
       });
 
-      await sendText(from, "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+      await responder(
+        from,
+        "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
+      );
       return;
     }
 
     if (msg === "2") {
       updateSession(from, {
         tramite: "Primera vez",
-        step: "COMPARENDO"
+        step: "COMPARENDO",
       });
 
-      await sendText(from, "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+      await responder(
+        from,
+        "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
+      );
       return;
     }
 
     if (msg === "3") {
       resetSession(from);
       updateSession(from, { step: "MENU_PRINCIPAL" });
-      await sendText(from, menuPrincipal());
+      await responder(from, menuPrincipal());
       return;
     }
 
-    await sendText(from, menuTramite());
+    await responder(from, menuTramite());
     return;
   }
 
   if (session.step === "MENU_INFORMACION") {
     if (msg === "1") {
-      await sendText(from, getMessage("precios"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("precios"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "2") {
-      await sendText(from, getMessage("duracion"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("duracion"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "3") {
-      await sendText(from, getMessage("horarios"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("horarios"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "4") {
-      await sendText(from, getMessage("pagos"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("pagos"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "5") {
-      await sendText(from, getMessage("proceso"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("proceso"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "6") {
-      await sendText(from, getMessage("ubicacion"));
-      await sendText(from, menuInformacionCorto());
+      await responder(from, getMessage("ubicacion"));
+      await responder(from, menuInformacionCorto());
       return;
     }
 
     if (msg === "7") {
       resetSession(from);
       updateSession(from, { step: "MENU_PRINCIPAL" });
-      await sendText(from, menuPrincipal());
+      await responder(from, menuPrincipal());
       return;
     }
 
-    await sendText(from, menuInformacion());
+    await responder(from, menuInformacion());
     return;
   }
 
   if (session.step === "COMPARENDO") {
     const opciones = {
-      "1": "Sí",
-      "2": "No",
-      "3": "No estoy seguro"
+      1: "Sí",
+      2: "No",
+      3: "No estoy seguro",
     };
 
     if (!opciones[msg]) {
-      await sendText(from, "Por favor responde:\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro");
+      await responder(
+        from,
+        "Por favor responde:\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
+      );
       return;
     }
 
     updateSession(from, {
       comparendos: opciones[msg],
-      step: "ASISTENCIA"
+      step: "ASISTENCIA",
     });
 
-    await sendText(from, "¿Puedes asistir hoy o mañana?\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día");
+    await responder(
+      from,
+      "¿Puedes asistir hoy o mañana?\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día"
+    );
     return;
   }
 
   if (session.step === "ASISTENCIA") {
     const opciones = {
-      "1": "Hoy",
-      "2": "Mañana",
-      "3": "Otro día"
+      1: "Hoy",
+      2: "Mañana",
+      3: "Otro día",
     };
 
     if (!opciones[msg]) {
-      await sendText(from, "Por favor responde:\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día");
+      await responder(
+        from,
+        "Por favor responde:\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día"
+      );
       return;
     }
 
     updateSession(from, {
       asistencia: opciones[msg],
-      step: "CEDULA"
+      step: "CEDULA",
     });
 
-    await sendText(from, "Perfecto ✅\n\nPor favor envíame tu número de cédula para revisar la información en RUNT.");
+    await responder(
+      from,
+      "Perfecto ✅\n\nPor favor envíame tu número de cédula para revisar la información en RUNT."
+    );
     return;
   }
 
   if (session.step === "CEDULA") {
     if (!esCedulaValida(text)) {
-      await sendText(from, "⚠️ Por favor envía solo el número de cédula, sin puntos ni espacios.");
+      await responder(
+        from,
+        "⚠️ Por favor envía solo el número de cédula, sin puntos ni espacios."
+      );
       return;
     }
 
-    await sendText(from, "🔎 Estoy consultando la información en RUNT. Esto puede tardar unos segundos...");
+    await responder(
+      from,
+      "🔎 Estoy consultando la información en RUNT. Esto puede tardar unos segundos..."
+    );
 
     try {
       const resultado = await consultarRuntPorCedula(text);
-const respuesta = formatearResultadoWhatsApp(text, resultado);
+      const respuesta = formatearResultadoWhatsApp(text, resultado);
 
-await sendText(from, respuesta);
+      await responder(from, respuesta);
 
-updateSession(from, {
-  step: "AGENDAR",
-  cedula: text
-});
-
-      resetSession(from);
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula: text,
+      });
     } catch (error) {
       console.error("❌ Error RUNT:", error.message);
-      await sendText(
+
+      await responder(
         from,
         "⚠️ En este momento no fue posible consultar RUNT. Por favor intenta más tarde o escribe *asesor*."
       );
@@ -242,11 +311,17 @@ updateSession(from, {
 
     return;
   }
+
   if (session.step === "AGENDAR") {
-  if (msg === "1" || msg.includes("si") || msg.includes("sí") || msg.includes("agendar")) {
-    await sendText(
-      from,
-      `Perfecto ✅
+    if (
+      msg === "1" ||
+      msg.includes("si") ||
+      msg.includes("sí") ||
+      msg.includes("agendar")
+    ) {
+      await responder(
+        from,
+        `Perfecto ✅
 
 Un asesor de *VIP CRC Galerías* te escribirá para ayudarte con el agendamiento.
 
@@ -254,41 +329,45 @@ Por favor déjanos:
 👤 Nombre completo
 📅 Día en el que deseas asistir
 🚗 Categoría que deseas renovar o tramitar`
-    );
+      );
 
-    resetSession(from);
-    return;
-  }
+      resetSession(from);
+      return;
+    }
 
-  if (msg === "2" || msg.includes("no")) {
-    await sendText(
-      from,
-      `Está bien 🙌
+    if (msg === "2" || msg.includes("no")) {
+      await responder(
+        from,
+        `Está bien 🙌
 
 Recuerda que el descuento está disponible solo por esta semana.
 
 Cuando desees continuar, escribe *menu* y con gusto te ayudamos.`
-    );
+      );
 
-    resetSession(from);
-    return;
-  }
+      resetSession(from);
+      return;
+    }
 
-  await sendText(
-    from,
-    `¿Deseas que te ayudemos a agendar tu proceso?
+    await responder(
+      from,
+      `¿Deseas que te ayudemos a agendar tu proceso?
 
 1️⃣ Sí, quiero agendar
 2️⃣ No por ahora`
-  );
+    );
 
-  return;
-}
+    return;
+  }
 
   resetSession(from);
   updateSession(from, { step: "MENU_PRINCIPAL" });
-  await sendText(from, menuPrincipal());
+  await responder(from, menuPrincipal());
 }
+
+/* =========================
+   MENÚS
+========================= */
 
 function menuPrincipal() {
   return `Hola 👋 gracias por escribir a *VIP CRC Galerías*.
