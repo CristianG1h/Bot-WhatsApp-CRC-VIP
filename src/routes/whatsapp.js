@@ -312,57 +312,46 @@ async function procesarMensaje(from, text) {
     return;
   }
 
-  if (session.step === "AGENDAR") {
-    if (
-      msg === "1" ||
-      msg.includes("si") ||
-      msg.includes("sí") ||
-      msg.includes("agendar")
-    ) {
-      await responder(
-        from,
-        `Perfecto ✅
+if (session.step === "AGENDAR") {
+  if (
+    msg === "1" ||
+    msg.includes("si") ||
+    msg.includes("sí") ||
+    msg.includes("agendar") ||
+    msg.includes("asesor")
+  ) {
+    await responder(
+      from,
+      `Perfecto ✅
 
-Un asesor de *VIP CRC Galerías* te escribirá para ayudarte con el agendamiento.
+Un asesor de *VIP CRC Galerías* continuará con tu atención.
 
 Por favor déjanos:
 👤 Nombre completo
-📅 Día en el que deseas asistir
-🚗 Categoría que deseas renovar o tramitar`
-      );
-
-      resetSession(from);
-      return;
-    }
-
-    if (msg === "2" || msg.includes("no")) {
-      await responder(
-        from,
-        `Está bien 🙌
-
-Recuerda que el descuento está disponible solo por esta semana.
-
-Cuando desees continuar, escribe *menu* y con gusto te ayudamos.`
-      );
-
-      resetSession(from);
-      return;
-    }
-
-    await responder(
-      from,
-      `¿Deseas que te ayudemos a agendar tu proceso?
-
-1️⃣ Sí, quiero agendar
-2️⃣ No por ahora`
+📅 Día en el que deseas asistir o ser contactado
+🚗 Trámite que deseas realizar`
     );
 
+    resetSession(from);
     return;
   }
 
-  resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL" });
-  await responder(from, menuPrincipal());
+  if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL" });
+    await responder(from, menuPrincipal());
+    return;
+  }
+
+  await responder(
+    from,
+    `¿Deseas continuar?
+
+1️⃣ Hablar con asesor
+2️⃣ Volver al menú principal`
+  );
+
+  return;
 }
 
 /* =========================
