@@ -7,6 +7,7 @@ const whatsappRoutes = require("./routes/whatsapp");
 const app = express();
 
 app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: false }));
 
 app.use("/", healthRoutes);
 app.use("/webhook", whatsappRoutes);
