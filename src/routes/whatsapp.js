@@ -415,4 +415,49 @@ function menuInformacionCorto() {
 7️⃣ Volver al inicio`;
 }
 
+async function responder(to, body) {
+  const texto = String(body || "");
+
+  if (String(to).startsWith("whatsapp:")) {
+    const partes = dividirMensaje(texto, 1300);
+
+    for (const parte of partes) {
+      await sendTwilioText(to, parte);
+      await esperar(700);
+    }
+
+    return;
+  }
+
+  return sendText(to, texto);
+}
+
+function dividirMensaje(texto, max = 1300) {
+  if (texto.length <= max) return [texto];
+
+  const partes = [];
+  let restante = texto;
+
+  while (restante.length > max) {
+    let corte = restante.lastIndexOf("\n", max);
+
+    if (corte < 400) {
+      corte = max;
+    }
+
+    partes.push(restante.slice(0, corte).trim());
+    restante = restante.slice(corte).trim();
+  }
+
+  if (restante.length > 0) {
+    partes.push(restante);
+  }
+
+  return partes;
+}
+
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 module.exports = router;
