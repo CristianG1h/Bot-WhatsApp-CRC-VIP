@@ -313,11 +313,21 @@ function formatearResultadoWhatsApp(cedula, resultado) {
 }
 
 function obtenerCategoriasLicencia(licencias) {
+  if (!Array.isArray(licencias)) return [];
+
+  // Primero tomamos únicamente licencias ACTIVAS
+  let licenciasValidas = licencias.filter(
+    (lic) => String(lic.estadoLicencia || "").toUpperCase() === "ACTIVA"
+  );
+
+  // Si no hay activas, ahí sí usamos las demás como respaldo
+  if (licenciasValidas.length === 0) {
+    licenciasValidas = licencias;
+  }
+
   const categorias = [];
 
-  if (!Array.isArray(licencias)) return categorias;
-
-  for (const lic of licencias) {
+  for (const lic of licenciasValidas) {
     if (!Array.isArray(lic.detalleLicencia)) continue;
 
     for (const det of lic.detalleLicencia) {
