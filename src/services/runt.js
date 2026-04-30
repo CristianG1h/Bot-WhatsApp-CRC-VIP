@@ -368,9 +368,6 @@ function seleccionarCategoriasPrincipales(categorias) {
   return normalizadas.slice(0, 2);
 }
 
-  return categorias;
-}
-
 function calcularEstadoVencimiento(fechaIso) {
   if (!fechaIso) return "SIN_FECHA";
 
