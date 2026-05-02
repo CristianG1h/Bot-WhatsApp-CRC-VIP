@@ -10,6 +10,11 @@ const {
   formatearResultadoWhatsApp,
 } = require("../services/runt");
 
+const {
+  consultarSimitPorDocumento,
+  formatearResultadoSimitWhatsApp,
+} = require("../services/simit");
+
 const { getSession, updateSession, resetSession } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
@@ -40,18 +45,13 @@ function dividirMensaje(texto, max = 1300) {
 
   while (restante.length > max) {
     let corte = restante.lastIndexOf("\n", max);
-
-    if (corte < 400) {
-      corte = max;
-    }
+    if (corte < 400) corte = max;
 
     partes.push(restante.slice(0, corte).trim());
     restante = restante.slice(corte).trim();
   }
 
-  if (restante.length > 0) {
-    partes.push(restante);
-  }
+  if (restante.length > 0) partes.push(restante);
 
   return partes;
 }
@@ -112,24 +112,157 @@ async function procesarMensaje(from, text) {
   const session = getSession(from);
   const msg = text.toLowerCase().trim();
 
-  console.log("📩 Mensaje recibido:", text);
-  console.log("👤 Usuario:", from);
+  console.log("Mensaje recibido:", text);
+  console.log("Usuario:", from);
   console.log("➡️ Paso actual:", session.step);
 
   if (isRateLimited(from)) {
     await responder(
       from,
-      "⚠️ Has enviado muchos mensajes seguidos. Por favor espera un momento."
+      "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
     );
     return;
   }
 
   if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
     resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL" });
-    await responder(from, menuPrincipal());
+    updateSession(from, { step: "MENU_INICIAL" });
+    await responder(from, menuInicial());
     return;
   }
+
+  if (session.step === "MENU_INICIAL") {
+    if (msg === "1" || msg.includes("crc")) {
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    if (msg === "2" || msg.includes("cia") || msg.includes("simit")) {
+      updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+      await responder(from, menuCia());
+      return;
+    }
+
+    await responder(from, menuInicial());
+    return;
+  }
+
+  // ─────────────────────────────────────────────
+  // FLUJO CIA VIP / SIMIT
+  // ─────────────────────────────────────────────
+
+  if (session.step === "CIA_MENU") {
+    if (msg === "1") {
+      updateSession(from, { step: "CIA_AUTORIZACION" });
+      await responder(
+        from,
+        `Para consultar SIMIT necesitamos tu autorización.
+
+Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMIT con fines de orientación sobre comparendos.`
+      );
+      return;
+    }
+
+    if (msg === "2") {
+      resetSession(from);
+      updateSession(from, { step: "MENU_INICIAL" });
+      await responder(from, menuInicial());
+      return;
+    }
+
+    await responder(from, menuCia());
+    return;
+  }
+
+  if (session.step === "CIA_AUTORIZACION") {
+    if (!msg.includes("acepto")) {
+      await responder(from, "Para continuar debes responder *ACEPTO*.");
+      return;
+    }
+
+    updateSession(from, { step: "CIA_DOCUMENTO" });
+    await responder(
+      from,
+      "Perfecto ✅\n\nEnvíame el número de cédula o placa que deseas consultar en SIMIT."
+    );
+    return;
+  }
+
+  if (session.step === "CIA_DOCUMENTO") {
+    const documento = text.replace(/\s+/g, "").toUpperCase();
+
+    if (documento.length < 5) {
+      await responder(from, "⚠️ Envía una cédula o placa válida.");
+      return;
+    }
+
+    await responder(
+      from,
+      "🔎 Estoy consultando SIMIT. Esto puede tardar unos segundos..."
+    );
+
+    try {
+      const resultado = await consultarSimitPorDocumento(documento);
+      const respuesta = formatearResultadoSimitWhatsApp(documento, resultado);
+
+      await responder(from, respuesta);
+
+      updateSession(from, {
+        step: "CIA_FINAL",
+        documentoSimit: documento,
+      });
+    } catch (error) {
+      console.error("❌ Error SIMIT:", error.message);
+      await responder(
+        from,
+        "⚠️ En este momento no fue posible consultar SIMIT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  }
+
+  if (session.step === "CIA_FINAL") {
+    if (
+      msg === "1" ||
+      msg.includes("asesor") ||
+      msg.includes("si") ||
+      msg.includes("sí")
+    ) {
+      resetSession(from);
+      await responder(
+        from,
+        `Perfecto ✅ Un asesor de *CIA VIP* continuará con tu atención.
+
+Por favor déjanos:
+Nombre completo
+Ciudad
+Consulta que deseas realizar`
+      );
+      return;
+    }
+
+    if (msg === "2" || msg.includes("volver") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_INICIAL" });
+      await responder(from, menuInicial());
+      return;
+    }
+
+    await responder(
+      from,
+      `¿Deseas continuar?
+
+1️⃣ Hablar con asesor
+2️⃣ Volver al inicio`
+    );
+    return;
+  }
+
+  // ─────────────────────────────────────────────
+  // FLUJO CRC EXISTENTE
+  // ─────────────────────────────────────────────
 
   if (session.step === "MENU_PRINCIPAL") {
     if (msg === "1") {
@@ -148,7 +281,7 @@ async function procesarMensaje(from, text) {
       resetSession(from);
       await responder(
         from,
-        "Perfecto ✅ Un asesor de *VIP CRC Galerías* continuará con tu atención. Por favor déjanos tu nombre completo y el trámite que deseas realizar."
+        "Perfecto ✅ Un asesor de *VIP CRC Galerías* continuará con tu atención.\nPor favor déjanos tu nombre completo y el trámite que deseas realizar."
       );
       return;
     }
@@ -163,7 +296,6 @@ async function procesarMensaje(from, text) {
         tramite: "Renovación / Refrendación",
         step: "COMPARENDO",
       });
-
       await responder(
         from,
         "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
@@ -176,7 +308,6 @@ async function procesarMensaje(from, text) {
         tramite: "Primera vez",
         step: "COMPARENDO",
       });
-
       await responder(
         from,
         "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
@@ -186,8 +317,8 @@ async function procesarMensaje(from, text) {
 
     if (msg === "3") {
       resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL" });
-      await responder(from, menuPrincipal());
+      updateSession(from, { step: "MENU_INICIAL" });
+      await responder(from, menuInicial());
       return;
     }
 
@@ -234,8 +365,8 @@ async function procesarMensaje(from, text) {
 
     if (msg === "7") {
       resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL" });
-      await responder(from, menuPrincipal());
+      updateSession(from, { step: "MENU_INICIAL" });
+      await responder(from, menuInicial());
       return;
     }
 
@@ -308,7 +439,7 @@ async function procesarMensaje(from, text) {
 
     await responder(
       from,
-      "🔎 Estoy consultando la información en RUNT. Esto puede tardar unos segundos..."
+      "🔎 Estoy consultando la información en RUNT.\nEsto puede tardar unos segundos..."
     );
 
     try {
@@ -323,10 +454,9 @@ async function procesarMensaje(from, text) {
       });
     } catch (error) {
       console.error("❌ Error RUNT:", error.message);
-
       await responder(
         from,
-        "⚠️ En este momento no fue posible consultar RUNT. Por favor intenta más tarde o escribe *asesor*."
+        "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
       );
     }
 
@@ -343,24 +473,21 @@ async function procesarMensaje(from, text) {
     ) {
       await responder(
         from,
-        `Perfecto ✅
-
-Un asesor de *VIP CRC Galerías* continuará con tu atención.
+        `Perfecto ✅ Un asesor de *VIP CRC Galerías* continuará con tu atención.
 
 Por favor déjanos:
-👤 Nombre completo
-📅 Día en el que deseas asistir o ser contactado
-🚗 Trámite que deseas realizar`
+Nombre completo
+Día en el que deseas asistir o ser contactado
+Trámite que deseas realizar`
       );
-
       resetSession(from);
       return;
     }
 
     if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
       resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL" });
-      await responder(from, menuPrincipal());
+      updateSession(from, { step: "MENU_INICIAL" });
+      await responder(from, menuInicial());
       return;
     }
 
@@ -371,17 +498,27 @@ Por favor déjanos:
 1️⃣ Hablar con asesor
 2️⃣ Volver al menú principal`
     );
-
     return;
   }
 
   resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL" });
-  await responder(from, menuPrincipal());
+  updateSession(from, { step: "MENU_INICIAL" });
+  await responder(from, menuInicial());
+}
+
+function menuInicial() {
+  return `Hola 👋 Bienvenido a *CRC VIP Galerías* y *CIA VIP*.
+
+¿En qué podemos ayudarte hoy?
+
+1️⃣ CRC - Licencias de conducción
+2️⃣ CIA VIP - Comparendos / SIMIT
+
+Escribe el número de la opción.`;
 }
 
 function menuPrincipal() {
-  return `Hola 👋 gracias por escribir a *VIP CRC Galerías*.
+  return `Hola gracias por escribir a *VIP CRC Galerías*.
 
 ¿Cómo podemos ayudarte hoy?
 
@@ -392,10 +529,17 @@ function menuPrincipal() {
 También puedes escribir *menu* para volver al inicio.`;
 }
 
-function menuTramite() {
-  return `Perfecto 🚗🏍️
+function menuCia() {
+  return `Bienvenido a *CIA VIP* 🚗
 
-¿Qué trámite deseas realizar?
+¿Qué deseas hacer?
+
+1️⃣ Consultar comparendos en SIMIT
+2️⃣ Volver al inicio`;
+}
+
+function menuTramite() {
+  return `Perfecto 🚗 ¿Qué trámite deseas realizar?
 
 1️⃣ Renovación / Refrendación
 2️⃣ Primera vez
