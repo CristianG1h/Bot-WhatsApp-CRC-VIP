@@ -53,8 +53,30 @@ async function consultarSimitPorDocumento(documento) {
       timeout: 90000,
     });
 
-    await page.waitForTimeout(12000);
-    await cerrarPopup(page);
+    await page.waitForTimeout(8000);
+
+// 🔥 Esperar que desaparezca el modal de "Espera un momento"
+try {
+  await page.waitForSelector("#whcModal", {
+    state: "hidden",
+    timeout: 20000,
+  });
+} catch {
+  console.log("⚠️ Modal whcModal no desapareció a tiempo");
+}
+
+// 🔥 Esperar que desaparezca el otro modal
+try {
+  await page.waitForSelector("#modalInformation", {
+    state: "hidden",
+    timeout: 15000,
+  });
+} catch {
+  console.log("⚠️ Modal modalInformation no desapareció");
+}
+
+// Intentar cerrar popups normales
+await cerrarPopup(page);
 
     const input = page.locator(
       'input[placeholder="Número de identificación o placa del vehículo"]'
@@ -65,7 +87,7 @@ async function consultarSimitPorDocumento(documento) {
       timeout: 45000,
     });
 
-    await input.click();
+    await input.click({ force: true });
     await input.fill("");
     await input.fill(String(documento).trim().toUpperCase());
 
