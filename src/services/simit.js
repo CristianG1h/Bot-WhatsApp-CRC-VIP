@@ -5,31 +5,6 @@ function dinero(valor) {
   return "$" + Math.round(Number(valor)).toLocaleString("es-CO");
 }
 
-async function cerrarPopup(page) {
-  const posiblesBotones = [
-    "button:has-text('×')",
-    "button:has-text('x')",
-    ".modal button.close",
-    ".modal .close",
-    "[aria-label='Close']",
-    "[aria-label='Cerrar']",
-    "button.close",
-  ];
-
-  for (const selector of posiblesBotones) {
-    try {
-      const btn = page.locator(selector).first();
-      if (await btn.isVisible({ timeout: 1200 })) {
-        await btn.click();
-        await page.waitForTimeout(1000);
-        return true;
-      }
-    } catch {}
-  }
-
-  return false;
-}
-
 async function consultarSimitPorDocumento(documento) {
   const browser = await chromium.launch({
     headless: true,
@@ -48,103 +23,82 @@ async function consultarSimitPorDocumento(documento) {
   });
 
   try {
+    console.log("🌐 Abriendo SIMIT...");
+
     await page.goto("https://www.fcm.org.co/simit/#/home-public", {
       waitUntil: "domcontentloaded",
       timeout: 90000,
     });
 
-    await page.waitForTimeout(8000);
+    console.log("⏳ Esperando validación automática de SIMIT...");
+    await page.waitForTimeout(18000);
 
-// 🔥 Esperar que desaparezca el modal de "Espera un momento"
-try {
-  await page.waitForSelector("#whcModal", {
-    state: "hidden",
-    timeout: 20000,
-  });
-} catch {
-  console.log("⚠️ Modal whcModal no desapareció a tiempo");
-}
-
-// 🔥 Esperar que desaparezca el otro modal
-try {
-  await page.waitForSelector("#modalInformation", {
-    state: "hidden",
-    timeout: 15000,
-  });
-} catch {
-  console.log("⚠️ Modal modalInformation no desapareció");
-}
-
-// Intentar cerrar popups normales
-await cerrarPopup(page);
-
-    const input = page.locator(
-      'input[placeholder="Número de identificación o placa del vehículo"]'
-    );
+    const input = page.locator("#txtBusqueda");
 
     await input.waitFor({
       state: "visible",
-      timeout: 45000,
+      timeout: 60000,
     });
 
+    console.log("⌨️ Escribiendo documento...");
     await input.click({ force: true });
     await input.fill("");
     await input.fill(String(documento).trim().toUpperCase());
 
-    let response = null;
+    await page.waitForTimeout(1500);
+
+    console.log("🔎 Consultando SIMIT...");
+
+    const responsePromise = page.waitForResponse(
+      (res) =>
+        res.url().includes("/estadocuenta/consulta") &&
+        res.status() === 200,
+      { timeout: 90000 }
+    );
+
+    await page.keyboard.press("Enter");
+
+    let response;
 
     try {
-      const responsePromise = page.waitForResponse(
+      response = await responsePromise;
+    } catch {
+      console.log("⚠️ No respondió con Enter. Intentando botón buscar...");
+
+      const responsePromiseClick = page.waitForResponse(
         (res) =>
           res.url().includes("/estadocuenta/consulta") &&
           res.status() === 200,
         { timeout: 90000 }
       );
 
-      await page.keyboard.press("Enter");
-      response = await responsePromise;
-    } catch (error) {
-      console.log("⚠️ No respondió con Enter, intentando click en botón...");
+      await page.locator("#txtBusqueda").press("Enter").catch(() => {});
+      await page.waitForTimeout(1000);
 
-      const botones = [
-        "button:has-text('Consultar')",
-        "button:has-text('Buscar')",
-        ".btn-primary",
-        "button[type='submit']",
-      ];
+      try {
+        const botones = page.locator("button");
+        const count = await botones.count();
 
-      for (const selector of botones) {
-        try {
-          const btn = page.locator(selector).last();
+        for (let i = 0; i < count; i++) {
+          const btn = botones.nth(i);
+          const text = await btn.innerText().catch(() => "");
 
-          if (await btn.isVisible({ timeout: 3000 })) {
-            const responsePromise = page.waitForResponse(
-              (res) =>
-                res.url().includes("/estadocuenta/consulta") &&
-                res.status() === 200,
-              { timeout: 90000 }
-            );
-
-            await btn.click();
-            response = await responsePromise;
+          if (
+            text.toLowerCase().includes("buscar") ||
+            text.toLowerCase().includes("consultar")
+          ) {
+            await btn.click({ force: true });
             break;
           }
-        } catch {}
-      }
-    }
+        }
+      } catch {}
 
-    if (!response) {
-      await page.screenshot({
-        path: "simit-timeout.png",
-        fullPage: true,
-      });
-
-      throw new Error(
-        "SIMIT no respondió a la consulta. Captura guardada: simit-timeout.png"
-      );
+      response = await responsePromiseClick;
     }
 
     const data = await response.json();
+
+    console.log("✅ Respuesta SIMIT capturada");
 
     await browser.close();
     return data;
