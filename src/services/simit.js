@@ -2,7 +2,7 @@ const { chromium } = require("playwright");
 
 function dinero(valor) {
   if (valor === null || valor === undefined) return "$0";
-  return "$" + Number(valor).toLocaleString("es-CO");
+  return "$" + Math.round(Number(valor)).toLocaleString("es-CO");
 }
 
 async function cerrarPopup(page) {
@@ -21,28 +21,39 @@ async function cerrarPopup(page) {
       const btn = page.locator(selector).first();
       if (await btn.isVisible({ timeout: 1200 })) {
         await btn.click();
-        await page.waitForTimeout(800);
-        return;
+        await page.waitForTimeout(1000);
+        return true;
       }
     } catch {}
   }
+
+  return false;
 }
 
 async function consultarSimitPorDocumento(documento) {
   const browser = await chromium.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+    ],
   });
 
-  const page = await browser.newPage();
+  const page = await browser.newPage({
+    viewport: { width: 1366, height: 768 },
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+  });
 
   try {
     await page.goto("https://www.fcm.org.co/simit/#/home-public", {
-      waitUntil: "networkidle",
-      timeout: 60000,
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
     });
 
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(12000);
     await cerrarPopup(page);
 
     const input = page.locator(
@@ -51,25 +62,78 @@ async function consultarSimitPorDocumento(documento) {
 
     await input.waitFor({
       state: "visible",
-      timeout: 30000,
+      timeout: 45000,
     });
 
+    await input.click();
     await input.fill("");
-    await input.fill(documento);
+    await input.fill(String(documento).trim().toUpperCase());
 
-    const responsePromise = page.waitForResponse(
-      (response) => response.url().includes("/estadocuenta/consulta"),
-      { timeout: 45000 }
-    );
+    let response = null;
 
-    await page.keyboard.press("Enter");
+    try {
+      const responsePromise = page.waitForResponse(
+        (res) =>
+          res.url().includes("/estadocuenta/consulta") &&
+          res.status() === 200,
+        { timeout: 90000 }
+      );
 
-    const response = await responsePromise;
+      await page.keyboard.press("Enter");
+      response = await responsePromise;
+    } catch (error) {
+      console.log("⚠️ No respondió con Enter, intentando click en botón...");
+
+      const botones = [
+        "button:has-text('Consultar')",
+        "button:has-text('Buscar')",
+        ".btn-primary",
+        "button[type='submit']",
+      ];
+
+      for (const selector of botones) {
+        try {
+          const btn = page.locator(selector).last();
+
+          if (await btn.isVisible({ timeout: 3000 })) {
+            const responsePromise = page.waitForResponse(
+              (res) =>
+                res.url().includes("/estadocuenta/consulta") &&
+                res.status() === 200,
+              { timeout: 90000 }
+            );
+
+            await btn.click();
+            response = await responsePromise;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (!response) {
+      await page.screenshot({
+        path: "simit-timeout.png",
+        fullPage: true,
+      });
+
+      throw new Error(
+        "SIMIT no respondió a la consulta. Captura guardada: simit-timeout.png"
+      );
+    }
+
     const data = await response.json();
 
     await browser.close();
     return data;
   } catch (error) {
+    try {
+      await page.screenshot({
+        path: "simit-error.png",
+        fullPage: true,
+      });
+    } catch {}
+
     await browser.close();
     throw error;
   }
