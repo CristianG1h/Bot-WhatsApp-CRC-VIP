@@ -204,11 +204,15 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
     try {
       const resultado = await consultarSimitPorDocumento(documento);
-const respuestas = formatearResultadoSimitWhatsApp(documento, resultado);
+const respuesta = formatearResultadoSimitWhatsApp(documento, resultado);
 
-for (const mensaje of respuestas) {
-  await responder(from, mensaje);
-  await esperar(900);
+if (Array.isArray(respuesta)) {
+  for (const mensaje of respuesta) {
+    await responder(from, mensaje);
+    await esperar(900);
+  }
+} else {
+  await responder(from, respuesta);
 }
       updateSession(from, {
         step: "CIA_FINAL",
