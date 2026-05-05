@@ -115,51 +115,182 @@ async function consultarSimitPorDocumento(documento) {
   }
 }
 
-function formatearResultadoSimitWhatsApp(documento, data) {
-  let mensaje = `🚨 *Consulta SIMIT realizada*\n\n`;
-  mensaje += `📄 *Documento / Placa:* ${documento}\n`;
-  mensaje += `💰 *Total general:* ${dinero(data.totalGeneral)}\n`;
-  mensaje += `🚨 *Multas:* ${data.multas?.length || 0}\n`;
-  mensaje += `📋 *Comparendos:* ${data.comparendos?.length || 0}\n`;
-  mensaje += `✅ *Paz y salvo:* ${data.pazSalvo ? "Sí" : "No"}\n`;
+const TARIFAS_CURSOS_2026 = {
+  A: { curso50: 23600, curso25: 34100, operador: 25000 },
+  B: { curso50: 44600, curso25: 65700, operador: 40000 },
+  C: { curso50: 81600, curso25: 121100, operador: 78000 },
+  D: { curso50: 160700, curso25: 239800, operador: 135000 },
+  H: { curso50: 42400, curso25: null, operador: null },
+  I01: { curso50: 55300, curso25: null, operador: null },
+  I02: { curso50: 530000, curso25: null, operador: null },
+  E: { curso50: 239800, curso25: 342000, operador: 200000 },
+};
 
-  if (!data.multas || data.multas.length === 0) {
-    mensaje += `\n✅ No registra multas pendientes en SIMIT.`;
+function dinero(valor) {
+  if (valor === null || valor === undefined || isNaN(Number(valor))) return "$0";
+  return "$" + Math.round(Number(valor)).toLocaleString("es-CO");
+}
+
+function obtenerTipoInfraccion(codigo) {
+  if (!codigo) return null;
+  const limpio = String(codigo).trim().toUpperCase();
+
+  if (limpio.startsWith("I01")) return "I01";
+  if (limpio.startsWith("I02")) return "I02";
+
+  return limpio.charAt(0);
+}
+
+function parseFechaSimit(fecha) {
+  if (!fecha) return null;
+
+  const [fechaParte] = fecha.split(" ");
+  const [dia, mes, anio] = fechaParte.split("/").map(Number);
+
+  if (!dia || !mes || !anio) return null;
+
+  return new Date(anio, mes - 1, dia);
+}
+
+function diasHabilesDesde(fechaInicio) {
+  if (!fechaInicio) return null;
+
+  const inicio = new Date(fechaInicio);
+  const hoy = new Date();
+
+  inicio.setHours(0, 0, 0, 0);
+  hoy.setHours(0, 0, 0, 0);
+
+  let dias = 0;
+  const actual = new Date(inicio);
+
+  while (actual <= hoy) {
+    const dia = actual.getDay();
+
+    if (dia !== 0 && dia !== 6) {
+      dias++;
+    }
+
+    actual.setDate(actual.getDate() + 1);
+  }
+
+  return dias;
+}
+
+function calcularDescuento(multa) {
+  const infraccion = multa.infracciones?.[0];
+  const codigo = infraccion?.codigoInfraccion || "";
+  const tipo = obtenerTipoInfraccion(codigo);
+  const tarifa = TARIFAS_CURSOS_2026[tipo];
+
+  const esFotomulta = multa.comparendosElectronicos === "S";
+  const fechaBase = parseFechaSimit(multa.fechaNotificacion || multa.fechaComparendo);
+  const diasHabiles = diasHabilesDesde(fechaBase);
+
+  if (!tarifa || diasHabiles === null) {
+    return {
+      tipo,
+      aplica: false,
+      motivo: "No fue posible calcular descuento.",
+      diasHabiles,
+    };
+  }
+
+  let descuento = 0;
+
+  if (esFotomulta) {
+    if (diasHabiles <= 11) descuento = 50;
+    else if (diasHabiles >= 12 && diasHabiles <= 26) descuento = 25;
+  } else {
+    if (diasHabiles <= 5) descuento = 50;
+    else if (diasHabiles >= 6 && diasHabiles <= 20) descuento = 25;
+  }
+
+  if (!descuento) {
+    return {
+      tipo,
+      aplica: false,
+      motivo: "Ya no aparece dentro del tiempo de descuento para curso.",
+      diasHabiles,
+      esFotomulta,
+    };
+  }
+
+  const valorComparendo = Number(multa.valor || multa.valorPagar || 0);
+  const valorConDescuento = descuento === 50 ? valorComparendo * 0.5 : valorComparendo * 0.75;
+  const valorCurso = descuento === 50 ? tarifa.curso50 : tarifa.curso25;
+
+  return {
+    tipo,
+    aplica: true,
+    descuento,
+    diasHabiles,
+    esFotomulta,
+    valorComparendo,
+    valorConDescuento,
+    valorCurso,
+    operador: tarifa.operador,
+    valorPagarSimit: Math.max(valorConDescuento - valorCurso, 0),
+  };
+}
+
+function formatearResultadoSimitWhatsApp(documento, data) {
+  const pendientes = [
+    ...(data.comparendos || []),
+    ...(data.multas || []),
+  ];
+
+  let mensaje = `🚦 *Consulta SIMIT realizada*\n\n`;
+  mensaje += `📄 *Documento / Placa:* ${documento}\n`;
+  mensaje += `💰 *Total registrado:* ${dinero(data.totalGeneral)}\n`;
+  mensaje += `📋 *Registros encontrados:* ${pendientes.length}\n`;
+
+  if (pendientes.length === 0) {
+    mensaje += `\n✅ No registra comparendos o multas pendientes.`;
     return mensaje;
   }
 
   mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-  mensaje += `*Detalle de multas:*\n`;
+  mensaje += `*Detalle para curso de comparendo:*\n`;
 
-  data.multas.slice(0, 5).forEach((multa, index) => {
-    const infraccion = multa.infracciones?.[0];
+  pendientes.slice(0, 5).forEach((item, index) => {
+    const infraccion = item.infracciones?.[0];
+    const codigo = infraccion?.codigoInfraccion || "—";
+    const calculo = calcularDescuento(item);
 
-    mensaje += `\n${index + 1}️⃣ *Multa ${index + 1}*\n`;
-    mensaje += `🚗 Placa: ${multa.placa || "—"}\n`;
-    mensaje += `📍 Organismo: ${multa.organismoTransito || "—"}\n`;
-    mensaje += `📌 Estado: ${multa.estadoCartera || "—"}\n`;
-    mensaje += `📅 Fecha comparendo: ${multa.fechaComparendo || "—"}\n`;
-    mensaje += `💵 Valor a pagar: *${dinero(multa.valorPagar)}*\n`;
+    const nombreRegistro = calculo.aplica
+      ? "Comparendo con opción de curso"
+      : "Multa / comparendo sin descuento vigente";
 
-    if (infraccion) {
-      mensaje += `⚠️ Código: ${infraccion.codigoInfraccion || "—"}\n`;
-      mensaje += `📝 ${infraccion.descripcionInfraccion || "—"}\n`;
+    mensaje += `\n${index + 1}️⃣ *${nombreRegistro}*\n`;
+    mensaje += `🚗 Placa: ${item.placa || "—"}\n`;
+    mensaje += `📍 Organismo: ${item.organismoTransito || "—"}\n`;
+    mensaje += `⚠️ Código: ${codigo}\n`;
+    mensaje += `📅 Fecha comparendo: ${item.fechaComparendo || "—"}\n`;
+    mensaje += `📨 Notificación: ${item.fechaNotificacion || "No aplica"}\n`;
+
+    if (calculo.diasHabiles !== null) {
+      mensaje += `⏱️ Días hábiles aprox.: ${calculo.diasHabiles}\n`;
+    }
+
+    mensaje += `💵 Valor comparendo: ${dinero(calculo.valorComparendo || item.valorPagar)}\n`;
+
+    if (calculo.aplica) {
+      mensaje += `\n✅ *Aplica descuento del ${calculo.descuento}%*\n`;
+      mensaje += `📌 Tipo infracción: ${calculo.tipo}\n`;
+      mensaje += `🎓 Curso CIA VIP: ${dinero(calculo.valorCurso)}\n`;
+      mensaje += `🏢 Costo operador: ${dinero(calculo.operador)}\n`;
+      mensaje += `💳 Pago aprox. en SIMIT: ${dinero(calculo.valorPagarSimit)}\n`;
+      mensaje += `💰 Valor con descuento: ${dinero(calculo.valorConDescuento)}\n`;
+    } else {
+      mensaje += `\n❌ *No aparece con descuento vigente para curso.*\n`;
+      mensaje += `Motivo: ${calculo.motivo}\n`;
+      mensaje += `💳 Valor a pagar: ${dinero(item.valorPagar)}\n`;
     }
   });
 
-  if (data.cursos && data.cursos.length > 0) {
-    mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-    mensaje += `📘 *Cursos registrados:*\n`;
-
-    data.cursos.slice(0, 3).forEach((curso, index) => {
-      mensaje += `\n${index + 1}️⃣ Curso: ${curso.numeroCurso || "—"}\n`;
-      mensaje += `📅 Fecha: ${curso.fechaCurso || "—"}\n`;
-      mensaje += `🏫 Centro: ${curso.centroInstruccion || "—"}\n`;
-      mensaje += `✅ Estado: ${curso.estado || "—"}\n`;
-    });
-  }
-
-  mensaje += `\n¿Deseas hablar con un asesor de *CIA VIP*?\n\n`;
+  mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  mensaje += `¿Deseas que un asesor de *CIA VIP* revise tu caso?\n\n`;
   mensaje += `1️⃣ Sí, hablar con asesor\n`;
   mensaje += `2️⃣ Volver al inicio`;
 
