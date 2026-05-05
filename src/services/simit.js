@@ -48,8 +48,9 @@ function dinero(valor) {
   return "$" + Math.round(Number(valor)).toLocaleString("es-CO");
 }
 
-function tipoInfraccion(codigo) {
-  const limpio = String(codigo || "").trim().toUpperCase();
+function obtenerTipoInfraccion(codigo) {
+  if (!codigo) return null;
+  const limpio = String(codigo).trim().toUpperCase();
 
   if (limpio.startsWith("I01")) return "I01";
   if (limpio.startsWith("I02")) return "I02";
@@ -90,16 +91,16 @@ function hoySinHora() {
   return hoy;
 }
 
-function detectarDescuento(item) {
+function calcularDescuento(item) {
   const infraccion = item.infracciones?.[0];
   const codigo = infraccion?.codigoInfraccion || "";
-  const tipo = tipoInfraccion(codigo);
+  const tipo = obtenerTipoInfraccion(codigo);
   const tarifa = TARIFAS_COMPARENDO_2026[tipo];
 
   if (!tarifa) {
     return {
-      aplica: false,
       tipo,
+      aplica: false,
       motivo: "No tenemos tarifa configurada para este tipo de infracción.",
     };
   }
@@ -108,30 +109,30 @@ function detectarDescuento(item) {
 
   if (!esComparendo) {
     return {
-      aplica: false,
       tipo,
+      aplica: false,
       motivo: "Ya figura como multa/resolución. No aparece como comparendo con curso.",
     };
   }
 
-  const esFotoMulta = item.comparendosElectronicos === "S";
+  const esFotomulta = item.comparendosElectronicos === "S";
   const fechaBase = parseFechaSimit(item.fechaNotificacion || item.fechaComparendo);
 
   if (!fechaBase) {
     return {
-      aplica: false,
       tipo,
+      aplica: false,
       motivo: "No fue posible identificar la fecha para calcular descuento.",
     };
   }
 
   const hoy = hoySinHora();
 
-  const limite50 = esFotoMulta
+  const limite50 = esFotomulta
     ? sumarDiasHabiles(fechaBase, 11)
     : sumarDiasHabiles(fechaBase, 5);
 
-  const limite25 = esFotoMulta
+  const limite25 = esFotomulta
     ? sumarDiasHabiles(fechaBase, 26)
     : sumarDiasHabiles(fechaBase, 20);
 
@@ -142,8 +143,8 @@ function detectarDescuento(item) {
 
   if (!porcentaje) {
     return {
-      aplica: false,
       tipo,
+      aplica: false,
       motivo: "Ya no aparece dentro del tiempo legal para descuento por curso.",
       limite50,
       limite25,
@@ -154,17 +155,17 @@ function detectarDescuento(item) {
 
   if (!datos || datos.total === null) {
     return {
-      aplica: false,
       tipo,
+      aplica: false,
       motivo: `Este tipo de infracción no tiene tarifa disponible para ${porcentaje}%.`,
     };
   }
 
   return {
-    aplica: true,
     tipo,
+    aplica: true,
     porcentaje,
-    esFotoMulta,
+    esFotomulta,
     limite50,
     limite25,
     valorInfraccion: tarifa.valor,
@@ -174,102 +175,103 @@ function detectarDescuento(item) {
   };
 }
 
-async function cerrarPopup(page) {
-  const posiblesBotones = [
-    "button:has-text('×')",
-    "button:has-text('x')",
-    ".modal button.close",
-    ".modal .close",
-    "[aria-label='Close']",
-    "[aria-label='Cerrar']",
-    "button.close",
-  ];
-
-  for (const selector of posiblesBotones) {
-    try {
-      const btn = page.locator(selector).first();
-      if (await btn.isVisible({ timeout: 1500 })) {
-        await btn.click();
-        await page.waitForTimeout(1000);
-        return;
-      }
-    } catch {}
-  }
-}
-
 async function consultarSimitPorDocumento(documento) {
   const browser = await chromium.launch({
-    headless: false,
-    slowMo: 100,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+    ],
   });
 
-  const page = await browser.newPage();
-
-  let ultimaRespuestaConsulta = null;
-
-  page.on("response", async (response) => {
-    const url = response.url();
-
-    if (url.includes("/estadocuenta/consulta")) {
-      try {
-        ultimaRespuestaConsulta = await response.json();
-        console.log("✅ Respuesta SIMIT capturada");
-      } catch (e) {
-        console.log("No se pudo leer JSON SIMIT:", e.message);
-      }
-    }
+  const page = await browser.newPage({
+    viewport: { width: 1366, height: 768 },
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
   });
 
   try {
-    console.log("[1] Abriendo SIMIT...");
+    console.log("🌐 Abriendo SIMIT...");
+
     await page.goto("https://www.fcm.org.co/simit/#/home-public", {
-      waitUntil: "networkidle",
-      timeout: 60000,
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
     });
 
-    console.log("[2] Esperando validación inicial...");
-    await page.waitForTimeout(8000);
+    console.log("⏳ Esperando validación automática de SIMIT...");
+    await page.waitForTimeout(18000);
 
-    await cerrarPopup(page);
-
-    const input = page.locator(
-      'input[placeholder="Número de identificación o placa del vehículo"]'
-    );
+    const input = page.locator("#txtBusqueda");
 
     await input.waitFor({
       state: "visible",
-      timeout: 30000,
+      timeout: 60000,
     });
 
+    console.log("⌨️ Escribiendo documento...");
+    await input.click({ force: true });
     await input.fill("");
     await input.fill(String(documento).trim().toUpperCase());
 
-    console.log("[3] Consultando documento...");
+    await page.waitForTimeout(1500);
 
-    const botonBuscar = page.locator("button").filter({
-      has: page.locator("i, svg"),
-    }).last();
+    console.log("🔎 Consultando SIMIT...");
 
-    try {
-      await botonBuscar.click({ timeout: 5000 });
-    } catch {
-      await page.keyboard.press("Enter");
-    }
-
-    await page.waitForResponse(
-      (response) => response.url().includes("/estadocuenta/consulta"),
-      { timeout: 45000 }
+    const responsePromise = page.waitForResponse(
+      (res) =>
+        res.url().includes("/estadocuenta/consulta") &&
+        res.status() === 200,
+      { timeout: 90000 }
     );
 
-    await page.waitForTimeout(3000);
+    await page.keyboard.press("Enter");
 
-    if (!ultimaRespuestaConsulta) {
-      throw new Error("No se capturó JSON de SIMIT.");
+    let response;
+
+    try {
+      response = await responsePromise;
+    } catch {
+      console.log("⚠️ No respondió con Enter. Intentando botón buscar...");
+
+      const responsePromiseClick = page.waitForResponse(
+        (res) =>
+          res.url().includes("/estadocuenta/consulta") &&
+          res.status() === 200,
+        { timeout: 90000 }
+      );
+
+      await page.locator("#txtBusqueda").press("Enter").catch(() => {});
+      await page.waitForTimeout(1000);
+
+      try {
+        const botones = page.locator("button");
+        const count = await botones.count();
+
+        for (let i = 0; i < count; i++) {
+          const btn = botones.nth(i);
+          const text = await btn.innerText().catch(() => "");
+
+          if (
+            text.toLowerCase().includes("buscar") ||
+            text.toLowerCase().includes("consultar")
+          ) {
+            await btn.click({ force: true });
+            break;
+          }
+        }
+      } catch {}
+
+      response = await responsePromiseClick;
     }
 
+    const data = await response.json();
+
+    console.log("✅ Respuesta SIMIT capturada");
+
     await browser.close();
-    return ultimaRespuestaConsulta;
+    return data;
   } catch (error) {
     try {
       await page.screenshot({
@@ -300,83 +302,70 @@ function formatearResultadoSimitWhatsApp(documento, data) {
     ...(data.multas || []),
   ];
 
-  const mensajes = [];
-
   const totalComparendos = registros.filter((r) => r.comparendo === true).length;
   const totalMultas = registros.filter((r) => r.comparendo !== true).length;
 
-  mensajes.push(
-`✅ *Consulta SIMIT realizada*
-
-📄 Documento / Placa: *${documento}*
-📋 Registros encontrados: *${registros.length}*
-🟡 Comparendos: *${totalComparendos}*
-🔴 Multas / resoluciones: *${totalMultas}*
-💵 Total registrado: *${dinero(data.totalGeneral)}*`
-  );
+  let mensaje = `✅ *Consulta SIMIT realizada*\n\n`;
+  mensaje += `📄 Documento / Placa: *${documento}*\n`;
+  mensaje += `📋 Registros encontrados: *${registros.length}*\n`;
+  mensaje += `🟡 Comparendos: *${totalComparendos}*\n`;
+  mensaje += `🔴 Multas / resoluciones: *${totalMultas}*\n`;
+  mensaje += `💵 Total registrado: *${dinero(data.totalGeneral)}*\n`;
 
   if (registros.length === 0) {
-    mensajes.push("✅ No registra comparendos ni multas pendientes.");
-    return mensajes;
+    mensaje += `\n✅ No registra comparendos ni multas pendientes.`;
+    return mensaje;
   }
 
-  registros.slice(0, 6).forEach((item, index) => {
+  mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  mensaje += `*Detalle para curso de comparendo:*\n`;
+
+  registros.slice(0, 5).forEach((item, index) => {
     const infraccion = item.infracciones?.[0] || {};
     const codigo = infraccion.codigoInfraccion || "—";
-    const calculo = detectarDescuento(item);
+    const calculo = calcularDescuento(item);
 
     const tipoRegistro = item.comparendo === true
       ? "🟡 Comparendo"
       : "🔴 Multa / resolución";
 
-    let msg =
-`📋 *Registro ${index + 1}*
-
-${tipoRegistro}
-🚗 Placa: ${item.placa || "—"}
-📍 Organismo: ${item.organismoTransito || "—"}
-⚠️ Código: ${codigo}
-📌 Tipo tarifa: ${calculo.tipo || "—"}
-📅 Fecha comparendo: ${formatearFechaCorta(item.fechaComparendo)}
-📨 Notificación: ${item.fechaNotificacion ? formatearFechaCorta(item.fechaNotificacion) : "No aplica"}
-💵 Valor infracción: *${dinero(calculo.valorInfraccion || item.valor || item.valorPagar)}*`;
+    mensaje += `\n${index + 1}️⃣ *${tipoRegistro}*\n`;
+    mensaje += `🚗 Placa: ${item.placa || "—"}\n`;
+    mensaje += `📍 Organismo: ${item.organismoTransito || "—"}\n`;
+    mensaje += `⚠️ Código: ${codigo}\n`;
+    mensaje += `📌 Tipo tarifa: ${calculo.tipo || "—"}\n`;
+    mensaje += `📅 Fecha comparendo: ${formatearFechaCorta(item.fechaComparendo)}\n`;
+    mensaje += `📨 Notificación: ${item.fechaNotificacion ? formatearFechaCorta(item.fechaNotificacion) : "No aplica"}\n`;
+    mensaje += `💵 Valor infracción: *${dinero(calculo.valorInfraccion || item.valor || item.valorPagar)}*\n`;
 
     if (calculo.aplica) {
-      msg += `
-
-✅ *Aplica descuento del ${calculo.porcentaje}%*
-🎓 Curso CIA VIP: *${dinero(calculo.curso)}*
-🏦 Pago tránsito/SIMIT: *${dinero(calculo.transito)}*
-💰 Total con descuento: *${dinero(calculo.total)}*`;
+      mensaje += `\n✅ *Aplica descuento del ${calculo.porcentaje}%*\n`;
+      mensaje += `🎓 Curso CIA VIP: *${dinero(calculo.curso)}*\n`;
+      mensaje += `🏦 Pago tránsito/SIMIT: *${dinero(calculo.transito)}*\n`;
+      mensaje += `💰 Total con descuento: *${dinero(calculo.total)}*\n`;
 
       if (calculo.limite50) {
-        msg += `\n📅 Límite 50%: ${calculo.limite50.toLocaleDateString("es-CO")}`;
+        mensaje += `📅 Límite 50%: ${calculo.limite50.toLocaleDateString("es-CO")}\n`;
       }
 
       if (calculo.limite25) {
-        msg += `\n📅 Límite 25%: ${calculo.limite25.toLocaleDateString("es-CO")}`;
+        mensaje += `📅 Límite 25%: ${calculo.limite25.toLocaleDateString("es-CO")}\n`;
       }
     } else {
-      msg += `
-
-❌ *No aparece con descuento disponible para curso*
-Motivo: ${calculo.motivo}
-💳 Valor a pagar: *${dinero(item.valorPagar || item.valor)}*`;
+      mensaje += `\n❌ *No aparece con descuento disponible para curso.*\n`;
+      mensaje += `Motivo: ${calculo.motivo}\n`;
+      mensaje += `💳 Valor a pagar: *${dinero(item.valorPagar || item.valor)}*\n`;
     }
 
-    msg += `\n\n📝 ${infraccion.descripcionInfraccion || ""}`;
-
-    mensajes.push(msg);
+    mensaje += `📝 ${infraccion.descripcionInfraccion || ""}\n`;
   });
 
-  mensajes.push(
-`¿Deseas que un asesor de *CIA VIP* revise tu caso?
+  mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  mensaje += `¿Deseas que un asesor de *CIA VIP* revise tu caso?\n\n`;
+  mensaje += `1️⃣ Sí, hablar con asesor\n`;
+  mensaje += `2️⃣ Volver al inicio`;
 
-1️⃣ Sí, hablar con asesor
-2️⃣ Volver al inicio`
-  );
-
-  return mensajes;
+  return mensaje;
 }
 
 module.exports = {
