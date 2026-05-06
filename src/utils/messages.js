@@ -342,6 +342,306 @@ Te dejamos el mapa para que llegues más fácil:
 https://maps.app.goo.gl/bJ8qJ91jWpmyAmHj7`
 ];
 
+const comparendoNo = [
+  `Perfecto ✅
+
+Entonces vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
+
+Por favor envíame tu número de cédula.`,
+
+  `Excelente ✅
+
+Si no tienes comparendos pendientes, podemos avanzar revisando tu licencia en RUNT.
+
+Envíame por favor tu número de cédula.`,
+
+  `Muy bien ✅
+
+Vamos a validar tu información en RUNT para saber cómo podemos ayudarte con tu trámite.
+
+Por favor envíame tu número de cédula.`,
+
+  `Listo ✅
+
+Continuemos con la revisión en RUNT para confirmar el estado de tu licencia.
+
+Envíame tu número de cédula sin puntos ni espacios.`,
+
+  `Perfecto, podemos avanzar ✅
+
+Para revisar tu estado en RUNT y orientarte correctamente, por favor envíame tu número de cédula.`
+];
+
+const comparendoNoSeguro = [
+  `Tranquilo ✅ Eso es muy común.
+
+Podemos avanzar revisando primero tu información en RUNT y, si es necesario, también te orientamos para validar en SIMIT si aparece algún comparendo pendiente.
+
+Por favor envíame tu número de cédula.`,
+
+  `No te preocupes ✅
+
+Primero revisamos tu información en RUNT y con eso podemos orientarte mejor sobre el proceso.
+
+Envíame tu número de cédula.`,
+
+  `Está bien ✅
+
+Muchas personas no recuerdan si tienen comparendos activos. Vamos a revisar primero tu información en RUNT para continuar con el trámite.
+
+Por favor envíame tu cédula.`,
+
+  `Sin problema ✅
+
+Podemos validar tu información en RUNT y, si aparece algo pendiente, te orientamos con el paso a seguir.
+
+Envíame tu número de cédula.`,
+
+  `Tranquilo, para eso te orientamos ✅
+
+Vamos a revisar tu información en RUNT y así sabremos cómo avanzar con tu trámite.
+
+Por favor envíame tu número de cédula.`
+];
+
+const simitSolicitarDocumento = [
+  `Entiendo ✅
+
+Para validar mejor tu caso, primero vamos a consultar en SIMIT si tienes comparendos o multas registradas.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`,
+
+  `Perfecto, revisemos primero en SIMIT ✅
+
+Así podemos saber si aparece algún comparendo o multa pendiente antes de continuar con la renovación.
+
+Envíame tu número de cédula.`,
+
+  `Listo ✅
+
+Vamos a consultar SIMIT para orientarte correctamente. Recuerda que si aparece una multa, normalmente debe pagarse para poder avanzar con el trámite final.
+
+Por favor envíame tu cédula.`,
+
+  `De acuerdo ✅
+
+Primero validamos SIMIT para saber si aparece algún registro pendiente. Si es comparendo, podemos orientarte con el curso; si ya es multa, te explicamos cómo proceder.
+
+Envíame tu número de cédula.`,
+
+  `Muy bien ✅
+
+Para darte una respuesta más precisa, vamos a revisar SIMIT antes de continuar.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`
+];
+
+const simitConsultando = [
+  `Estoy consultando SIMIT ✅
+
+Esto puede tardar unos segundos...`,
+
+  `Un momento por favor ✅
+
+Voy a validar la información en SIMIT.`,
+
+  `Estoy revisando si aparece algún comparendo o multa pendiente en SIMIT.
+
+Dame unos segundos ✅`,
+
+  `Listo, voy a consultar SIMIT con la información que me enviaste.
+
+Esto puede tardar un momento ✅`,
+
+  `Estoy verificando el estado en SIMIT para orientarte mejor.
+
+Por favor espera unos segundos ✅`
+];
+
+const simitConPendientes = [
+  `Según la consulta, aparece información pendiente en SIMIT.
+
+Te explico de forma sencilla:
+
+✅ Si es *comparendo* y todavía aplica descuento, nosotros podemos orientarte con el curso.
+⚠️ Si ya aparece como *multa o resolución*, normalmente debes realizar el pago para poder continuar con el trámite final de la licencia.
+
+De todas formas, el examen médico del CRC tiene una vigencia de *6 meses*, así que puedes adelantar esa parte y dejarla lista mientras solucionas lo pendiente.
+
+¿Qué deseas hacer?
+
+1️⃣ Hablar con un asesor para comparendos
+2️⃣ Seguir con la consulta de renovación en RUNT`,
+
+  `Encontramos registros en SIMIT.
+
+No te preocupes, te orientamos:
+
+✅ Cuando todavía es comparendo, podemos ayudarte con la información del curso.
+⚠️ Cuando ya está como multa, el pago debe realizarse para poder avanzar con el trámite final.
+
+Aun así, puedes adelantar el examen médico, ya que tiene vigencia de *6 meses*.
+
+¿Cómo deseas continuar?
+
+1️⃣ Quiero asesor para comparendos
+2️⃣ Seguir revisando mi renovación en RUNT`,
+
+  `La consulta en SIMIT muestra registros pendientes.
+
+Es importante tenerlo claro:
+
+✅ Si aplica curso por comparendo, podemos orientarte.
+⚠️ Si ya es multa, debes pagarla para poder continuar con la renovación ante tránsito.
+
+Pero puedes ir adelantando tu examen médico porque queda vigente por *6 meses*.
+
+Elige una opción:
+
+1️⃣ Asesor para comparendos
+2️⃣ Continuar con consulta RUNT`,
+
+  `Aparece información pendiente en SIMIT.
+
+Te podemos ayudar a revisar si todavía aplica curso por comparendo. Si el sistema ya lo muestra como multa, lo correcto es realizar el pago para poder finalizar el trámite.
+
+Mientras tanto, puedes adelantar tu examen médico porque tiene vigencia de *6 meses*.
+
+¿Qué prefieres?
+
+1️⃣ Hablar con asesor de comparendos
+2️⃣ Seguir con renovación / RUNT`,
+
+  `Vemos que SIMIT registra información pendiente.
+
+La recomendación es revisar el caso con cuidado:
+✅ Comparendo: podemos orientarte con el curso si aplica.
+⚠️ Multa: normalmente debe pagarse para continuar el trámite final.
+
+El examen médico lo puedes adelantar y te queda vigente por *6 meses*.
+
+Responde:
+
+1️⃣ Asesor para comparendos
+2️⃣ Seguir con consulta RUNT`
+];
+
+const simitSinPendientes = [
+  `Excelente ✅
+
+No aparecen comparendos ni multas pendientes en SIMIT.
+
+Ahora vamos a continuar revisando tu información en RUNT para validar el estado de tu licencia.`,
+
+  `Muy buena noticia ✅
+
+No registra pendientes en SIMIT.
+
+Continuemos con la revisión en RUNT para orientarte con la renovación.`,
+
+  `Perfecto ✅
+
+SIMIT no muestra comparendos ni multas pendientes.
+
+Ahora seguimos con la consulta en RUNT para revisar el estado de tu licencia.`,
+
+  `Listo ✅
+
+No aparecen registros pendientes en SIMIT.
+
+Voy a continuar con la validación en RUNT para revisar tu trámite.`,
+
+  `Excelente, puedes avanzar ✅
+
+No se evidencian pendientes en SIMIT.
+
+Ahora revisamos RUNT para continuar con tu proceso.`
+];
+
+const simitDecisionInvalida = [
+  `Por favor responde con una opción:
+
+1️⃣ Hablar con asesor para comparendos
+2️⃣ Seguir con consulta de renovación en RUNT`,
+
+  `Para continuar, elige una opción:
+
+1️⃣ Asesor para comparendos
+2️⃣ Continuar con RUNT`,
+
+  `No logré identificar tu respuesta.
+
+Responde únicamente:
+
+1️⃣ Comparendos
+2️⃣ Renovación / RUNT`,
+
+  `Te ayudo con cualquiera de estas opciones:
+
+1️⃣ Hablar con asesor de comparendos
+2️⃣ Seguir revisando la renovación en RUNT`,
+
+  `Por favor selecciona:
+
+1️⃣ Asesor para comparendos
+2️⃣ Seguir con consulta RUNT`
+];
+
+const asesorComparendos = [
+  `Perfecto ✅
+
+Un asesor continuará con tu caso de comparendos.
+
+Por favor déjanos estos datos:
+
+👤 Nombre completo
+🪪 Número de cédula
+🏙️ Ciudad
+📌 Consulta que deseas realizar`,
+
+  `Claro ✅
+
+Te vamos a orientar con el tema de comparendos.
+
+Por favor envíanos:
+
+👤 Nombre completo
+🪪 Cédula
+📍 Ciudad
+📝 Qué deseas revisar`,
+
+  `Listo ✅
+
+Un asesor de comparendos revisará tu caso.
+
+Déjanos por favor:
+
+👤 Nombre
+🪪 Cédula
+📞 Teléfono de contacto
+📌 Motivo de la consulta`,
+
+  `De acuerdo ✅
+
+Para ayudarte con comparendos, por favor envía:
+
+👤 Nombre completo
+🪪 Documento
+🏙️ Ciudad
+📄 Si deseas curso, descuento o revisión de multa`,
+
+  `Perfecto ✅
+
+Te pasamos con asesoría para comparendos.
+
+Por favor escribe:
+
+👤 Nombre completo
+🪪 Cédula
+📍 Ciudad
+📌 Qué necesitas revisar en SIMIT`
+];
+
 function getMessage(type) {
   const grupos = {
     precios,
@@ -349,12 +649,18 @@ function getMessage(type) {
     horarios,
     pagos,
     proceso,
-    ubicacion
+    ubicacion,
+    comparendoNo,
+    comparendoNoSeguro,
+    simitSolicitarDocumento,
+    simitConsultando,
+    simitConPendientes,
+    simitSinPendientes,
+    simitDecisionInvalida,
+    asesorComparendos,
   };
 
   return randomItem(grupos[type] || precios);
 }
 
-module.exports = {
-  getMessage
-};
+module.exports = { getMessage };

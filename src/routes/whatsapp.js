@@ -380,32 +380,384 @@ Consulta que deseas realizar`
     return;
   }
 
-  if (session.step === "COMPARENDO") {
-    const opciones = {
-      1: "Sí",
-      2: "No",
-      3: "No estoy seguro",
-    };
+  if (session.step === "COMPARENDO_SIMIT_DOCUMENTO") {
+  const documento = text.replace(/\s+/g, "").toUpperCase();
 
-    if (!opciones[msg]) {
+  if (documento.length < 5) {
+    await responder(
+      from,
+      "⚠️ Por favor envía una cédula válida, sin puntos ni espacios."
+    );
+    return;
+  }
+
+  updateSession(from, {
+    cedula: documento,
+    documentoSimit: documento,
+  });
+
+  await responder(from, getMessage("simitConsultando"));
+
+  try {
+    const resultadoSimit = await consultarSimitPorDocumento(documento);
+    const respuestaSimit = formatearResultadoSimitWhatsApp(
+      documento,
+      resultadoSimit
+    );
+
+    if (Array.isArray(respuestaSimit)) {
+      for (const mensaje of respuestaSimit) {
+        await responder(from, mensaje);
+        await esperar(900);
+      }
+    } else {
+      await responder(from, respuestaSimit);
+    }
+
+    const registrosSimit = [
+      ...(resultadoSimit.comparendos || []),
+      ...(resultadoSimit.multas || []),
+    ];
+
+    if (registrosSimit.length > 0) {
+      updateSession(from, {
+        step: "SIMIT_DECISION_CRC",
+        simitTienePendientes: true,
+      });
+
+      await responder(from, getMessage("simitConPendientes"));
+      return;
+    }
+
+    await responder(from, getMessage("simitSinPendientes"));
+
+    await responder(
+      from,
+      "Estoy consultando la información en RUNT.\nEsto puede tardar unos segundos..."
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(documento);
+      const respuestaRunt = formatearResultadoWhatsApp(documento, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula: documento,
+      });
+    } catch (error) {
+      console.error("❌ Error RUNT:", error.message);
+
       await responder(
         from,
-        "Por favor responde:\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
+        "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  } catch (error) {
+    console.error("❌ Error SIMIT:", error.message);
+
+    await responder(
+      from,
+      `⚠️ En este momento no fue posible consultar SIMIT.
+
+Podemos continuar revisando tu información en RUNT para orientarte con el trámite.
+
+Estoy consultando la información en RUNT.
+Esto puede tardar unos segundos...`
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(documento);
+      const respuestaRunt = formatearResultadoWhatsApp(documento, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula: documento,
+      });
+    } catch (errorRunt) {
+      console.error("❌ Error RUNT:", errorRunt.message);
+
+      await responder(
+        from,
+        "⚠️ En este momento tampoco fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  }
+}
+
+if (session.step === "SIMIT_DECISION_CRC") {
+  if (
+    msg === "1" ||
+    msg.includes("asesor") ||
+    msg.includes("comparendo") ||
+    msg.includes("comparendos") ||
+    msg.includes("multa") ||
+    msg.includes("simit") ||
+    msg.includes("ayuda")
+  ) {
+    await responder(from, getMessage("asesorComparendos"));
+    resetSession(from);
+    return;
+  }
+
+  if (
+    msg === "2" ||
+    msg.includes("seguir") ||
+    msg.includes("continuar") ||
+    msg.includes("renovacion") ||
+    msg.includes("renovación") ||
+    msg.includes("runt") ||
+    msg.includes("licencia")
+  ) {
+    const cedula = session.cedula || session.documentoSimit;
+
+    if (!cedula) {
+      updateSession(from, {
+        step: "CEDULA",
+      });
+
+      await responder(
+        from,
+        "Perfecto ✅\n\nPara continuar con la revisión en RUNT, envíame tu número de cédula."
       );
       return;
     }
 
-    updateSession(from, {
-      comparendos: opciones[msg],
-      step: "ASISTENCIA",
-    });
-
     await responder(
       from,
-      "¿Puedes asistir hoy o mañana?\n\n1️⃣ Hoy\n2️⃣ Mañana\n3️⃣ Otro día"
+      `Perfecto ✅
+
+Continuemos con la revisión de tu renovación.
+
+Recuerda: si SIMIT muestra una multa o comparendo pendiente, el trámite final de la licencia puede quedar detenido hasta solucionarlo.
+
+De todas formas, vamos a revisar tu información en RUNT.
+
+Estoy consultando la información en RUNT.
+Esto puede tardar unos segundos...`
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(cedula);
+      const respuestaRunt = formatearResultadoWhatsApp(cedula, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula,
+      });
+    } catch (error) {
+      console.error("❌ Error RUNT:", error.message);
+
+      await responder(
+        from,
+        "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  }
+
+  await responder(from, getMessage("simitDecisionInvalida"));
+  return;
+}
+  if (session.step === "COMPARENDO_SIMIT_DOCUMENTO") {
+  const documento = text.replace(/\s+/g, "").toUpperCase();
+
+  if (documento.length < 5) {
+    await responder(
+      from,
+      "⚠️ Por favor envía una cédula válida, sin puntos ni espacios."
     );
     return;
   }
+
+  updateSession(from, {
+    cedula: documento,
+    documentoSimit: documento,
+  });
+
+  await responder(from, getMessage("simitConsultando"));
+
+  try {
+    const resultadoSimit = await consultarSimitPorDocumento(documento);
+    const respuestaSimit = formatearResultadoSimitWhatsApp(
+      documento,
+      resultadoSimit
+    );
+
+    if (Array.isArray(respuestaSimit)) {
+      for (const mensaje of respuestaSimit) {
+        await responder(from, mensaje);
+        await esperar(900);
+      }
+    } else {
+      await responder(from, respuestaSimit);
+    }
+
+    const registrosSimit = [
+      ...(resultadoSimit.comparendos || []),
+      ...(resultadoSimit.multas || []),
+    ];
+
+    if (registrosSimit.length > 0) {
+      updateSession(from, {
+        step: "SIMIT_DECISION_CRC",
+        simitTienePendientes: true,
+      });
+
+      await responder(from, getMessage("simitConPendientes"));
+      return;
+    }
+
+    await responder(from, getMessage("simitSinPendientes"));
+
+    await responder(
+      from,
+      "Estoy consultando la información en RUNT.\nEsto puede tardar unos segundos..."
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(documento);
+      const respuestaRunt = formatearResultadoWhatsApp(documento, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula: documento,
+      });
+    } catch (error) {
+      console.error("❌ Error RUNT:", error.message);
+
+      await responder(
+        from,
+        "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  } catch (error) {
+    console.error("❌ Error SIMIT:", error.message);
+
+    await responder(
+      from,
+      `⚠️ En este momento no fue posible consultar SIMIT.
+
+Podemos continuar revisando tu información en RUNT para orientarte con el trámite.
+
+Estoy consultando la información en RUNT.
+Esto puede tardar unos segundos...`
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(documento);
+      const respuestaRunt = formatearResultadoWhatsApp(documento, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula: documento,
+      });
+    } catch (errorRunt) {
+      console.error("❌ Error RUNT:", errorRunt.message);
+
+      await responder(
+        from,
+        "⚠️ En este momento tampoco fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  }
+}
+
+if (session.step === "SIMIT_DECISION_CRC") {
+  if (
+    msg === "1" ||
+    msg.includes("asesor") ||
+    msg.includes("comparendo") ||
+    msg.includes("comparendos") ||
+    msg.includes("multa") ||
+    msg.includes("simit") ||
+    msg.includes("ayuda")
+  ) {
+    await responder(from, getMessage("asesorComparendos"));
+    resetSession(from);
+    return;
+  }
+
+  if (
+    msg === "2" ||
+    msg.includes("seguir") ||
+    msg.includes("continuar") ||
+    msg.includes("renovacion") ||
+    msg.includes("renovación") ||
+    msg.includes("runt") ||
+    msg.includes("licencia")
+  ) {
+    const cedula = session.cedula || session.documentoSimit;
+
+    if (!cedula) {
+      updateSession(from, {
+        step: "CEDULA",
+      });
+
+      await responder(
+        from,
+        "Perfecto ✅\n\nPara continuar con la revisión en RUNT, envíame tu número de cédula."
+      );
+      return;
+    }
+
+    await responder(
+      from,
+      `Perfecto ✅
+
+Continuemos con la revisión de tu renovación.
+
+Recuerda: si SIMIT muestra una multa o comparendo pendiente, el trámite final de la licencia puede quedar detenido hasta solucionarlo.
+
+De todas formas, vamos a revisar tu información en RUNT.
+
+Estoy consultando la información en RUNT.
+Esto puede tardar unos segundos...`
+    );
+
+    try {
+      const resultadoRunt = await consultarRuntPorCedula(cedula);
+      const respuestaRunt = formatearResultadoWhatsApp(cedula, resultadoRunt);
+
+      await responder(from, respuestaRunt);
+
+      updateSession(from, {
+        step: "AGENDAR",
+        cedula,
+      });
+    } catch (error) {
+      console.error("❌ Error RUNT:", error.message);
+
+      await responder(
+        from,
+        "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      );
+    }
+
+    return;
+  }
+
+  await responder(from, getMessage("simitDecisionInvalida"));
+  return;
+}
 
   if (session.step === "ASISTENCIA") {
     const opciones = {
