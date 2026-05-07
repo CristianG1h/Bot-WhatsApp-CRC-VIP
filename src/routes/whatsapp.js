@@ -19,6 +19,7 @@ const { getSession, updateSession, resetSession } = require("../utils/sessions")
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
+const { enviarCorreoCita } = require("../services/email");
 
 async function responder(to, body) {
   const texto = String(body || "");
@@ -240,6 +241,30 @@ function detectarHorario(msg) {
   }
 
   return null;
+}
+
+function esCorreoValido(correo) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(correo || "").trim());
+}
+
+function esTelefonoValido(telefono) {
+  const limpio = String(telefono || "").replace(/\D/g, "");
+  return limpio.length >= 7 && limpio.length <= 13;
+}
+
+function resumenCita(datos) {
+  return `✅ *Cita preconfirmada - VIP CRC Galerías*
+
+👤 Nombre: *${datos.nombre}*
+🪪 Cédula: *${datos.cedula}*
+📞 Teléfono: *${datos.telefono}*
+📧 Correo: *${datos.correo}*
+🚗 Trámite: *${datos.tramite || "Licencia de conducción"}*
+⏰ Horario aproximado: *${datos.horario}*
+
+📍 Recuerda traer tu documento físico original.
+
+También enviamos la confirmación al correo registrado.`;
 }
 
 router.get("/", (req, res) => {
@@ -844,97 +869,322 @@ De todas formas, vamos a revisar tu información en RUNT.`
   }
 
   if (session.step === "AGENDAR") {
-    if (
-      msg === "1" ||
-      msg.includes("si") ||
-      msg.includes("sí") ||
-      msg.includes("agendar") ||
-      msg.includes("cita") ||
-      msg.includes("quiero")
-    ) {
-      updateSession(from, {
-        step: "HORARIO_CITA",
-      });
+  if (
+    msg === "1" ||
+    msg.includes("si") ||
+    msg.includes("sí") ||
+    msg.includes("agendar") ||
+    msg.includes("cita") ||
+    msg.includes("quiero")
+  ) {
+    updateSession(from, {
+      step: "HORARIO_CITA",
+    });
 
-      await responder(from, menuHorariosCita());
-      return;
-    }
-
-    if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
-      resetSession(from);
-      updateSession(from, { step: "MENU_INICIAL" });
-      await responder(
-        from,
-        `Entendido ✅
-
-Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
-      );
-      await responder(from, menuInicial());
-      return;
-    }
-
-    await responder(
-      from,
-      `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
-
-1️⃣ Sí, quiero agendar
-2️⃣ No por ahora`
-    );
+    await responder(from, menuHorariosCita());
     return;
   }
 
-  if (session.step === "HORARIO_CITA") {
-    const horario = detectarHorario(msg);
+  if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_INICIAL" });
 
-    if (!horario) {
-      await responder(from, menuHorariosCita());
-      return;
-    }
+    await responder(
+      from,
+      `Entendido ✅
 
-    updateSession(from, {
-      step: "DATOS_CITA",
-      horarioCita: horario,
-    });
+Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
+    );
 
-    if (horario === "Otro horario") {
-      await responder(
-        from,
-        `Perfecto ✅
+    await responder(from, menuInicial());
+    return;
+  }
 
-Para revisar otro horario, por favor envíanos en un solo mensaje:
+  await responder(
+    from,
+    `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
 
-👤 Nombre completo
-🪪 Número de cédula
-📞 Teléfono de contacto
-📧 Correo electrónico, si tienes
-📅 Día en el que deseas asistir
-⏰ Hora aproximada
+1️⃣ Sí, quiero agendar
+2️⃣ No por ahora`
+  );
+  return;
+}
 
-Un asesor validará la disponibilidad y continuará con tu atención.`
-      );
-      return;
-    }
+if (session.step === "HORARIO_CITA") {
+  const horario = detectarHorario(msg);
 
+  if (!horario) {
+    await responder(from, menuHorariosCita());
+    return;
+  }
+
+  updateSession(from, {
+    step: "NOMBRE_CITA",
+    horarioCita: horario,
+  });
+
+  if (horario === "Otro horario") {
     await responder(
       from,
       `Perfecto ✅
 
-Te dejamos con intención de asistencia en el horario:
+Indícanos el horario aproximado que prefieres.
 
+Ejemplo:
+*Mañana a las 10 a.m.*
+*Viernes en la tarde*
+*Hoy después de las 2 p.m.*`
+    );
+
+    updateSession(from, {
+      step: "HORARIO_PERSONALIZADO",
+    });
+
+    return;
+  }
+
+  await responder(
+    from,
+    `Perfecto ✅
+
+Horario seleccionado:
 ⏰ *${horario}*
 
-Para dejar tu atención preconfirmada, por favor envíanos en un solo mensaje:
+Ahora envíame tu *nombre completo*.`
+  );
+  return;
+}
 
-👤 Nombre completo
-🪪 Número de cédula
-📞 Teléfono de contacto
-📧 Correo electrónico, si tienes
-🚗 Trámite que deseas realizar
+if (session.step === "HORARIO_PERSONALIZADO") {
+  const horarioPersonalizado = text.trim();
 
-Te esperamos en *VIP CRC Galerías* para avanzar con tu examen médico.`
+  if (horarioPersonalizado.length < 4) {
+    await responder(
+      from,
+      "Por favor indícanos un horario aproximado más claro."
     );
     return;
   }
+
+  updateSession(from, {
+    step: "NOMBRE_CITA",
+    horarioCita: horarioPersonalizado,
+  });
+
+  await responder(
+    from,
+    `Listo ✅
+
+Horario solicitado:
+⏰ *${horarioPersonalizado}*
+
+Ahora envíame tu *nombre completo*.`
+  );
+  return;
+}
+
+if (session.step === "NOMBRE_CITA") {
+  const nombre = text.trim();
+
+  if (nombre.length < 5 || !nombre.includes(" ")) {
+    await responder(
+      from,
+      "Por favor envíame tu *nombre completo*, con nombre y apellido."
+    );
+    return;
+  }
+
+  updateSession(from, {
+    step: "CEDULA_CITA",
+    nombreCita: nombre,
+  });
+
+  await responder(
+    from,
+    `Gracias, *${nombre}* ✅
+
+Ahora envíame tu *número de cédula*, sin puntos ni espacios.`
+  );
+  return;
+}
+
+if (session.step === "CEDULA_CITA") {
+  const cedula = text.replace(/\D/g, "");
+
+  if (!esCedulaValida(cedula)) {
+    await responder(
+      from,
+      "⚠️ Por favor envía una cédula válida, solo números, sin puntos ni espacios."
+    );
+    return;
+  }
+
+  updateSession(from, {
+    step: "TELEFONO_CITA",
+    cedulaCita: cedula,
+  });
+
+  await responder(
+    from,
+    `Perfecto ✅
+
+Ahora envíame tu *número de teléfono de contacto*.`
+  );
+  return;
+}
+
+if (session.step === "TELEFONO_CITA") {
+  const telefono = text.replace(/\D/g, "");
+
+  if (!esTelefonoValido(telefono)) {
+    await responder(
+      from,
+      "⚠️ Por favor envía un número de teléfono válido."
+    );
+    return;
+  }
+
+  updateSession(from, {
+    step: "CORREO_CITA",
+    telefonoCita: telefono,
+  });
+
+  await responder(
+    from,
+    `Gracias ✅
+
+Ahora envíame tu *correo electrónico* para enviarte la confirmación de la cita.`
+  );
+  return;
+}
+
+if (session.step === "CORREO_CITA") {
+  const correo = text.trim().toLowerCase();
+
+  if (!esCorreoValido(correo)) {
+    await responder(
+      from,
+      "⚠️ Por favor envía un correo válido.\n\nEjemplo: nombre@gmail.com"
+    );
+    return;
+  }
+
+  updateSession(from, {
+    step: "CONFIRMAR_CITA",
+    correoCita: correo,
+  });
+
+  const datos = {
+    nombre: session.nombreCita,
+    cedula: session.cedulaCita || session.cedula,
+    telefono: session.telefonoCita,
+    correo,
+    horario: session.horarioCita || "Horario por confirmar",
+    tramite: session.tramite || "Licencia de conducción",
+  };
+
+  await responder(
+    from,
+    `Por favor confirma que los datos estén correctos:
+
+👤 Nombre: *${datos.nombre}*
+🪪 Cédula: *${datos.cedula}*
+📞 Teléfono: *${datos.telefono}*
+📧 Correo: *${datos.correo}*
+🚗 Trámite: *${datos.tramite}*
+⏰ Horario: *${datos.horario}*
+
+1️⃣ Confirmar cita
+2️⃣ Corregir datos`
+  );
+  return;
+}
+
+if (session.step === "CONFIRMAR_CITA") {
+  if (
+    msg === "2" ||
+    msg.includes("corregir") ||
+    msg.includes("editar") ||
+    msg.includes("cambiar")
+  ) {
+    updateSession(from, {
+      step: "HORARIO_CITA",
+      horarioCita: null,
+      nombreCita: null,
+      cedulaCita: null,
+      telefonoCita: null,
+      correoCita: null,
+    });
+
+    await responder(
+      from,
+      `Sin problema ✅
+
+Vamos a tomar los datos nuevamente.`
+    );
+
+    await responder(from, menuHorariosCita());
+    return;
+  }
+
+  if (
+    msg !== "1" &&
+    !msg.includes("confirmar") &&
+    !msg.includes("si") &&
+    !msg.includes("sí") &&
+    !msg.includes("correcto")
+  ) {
+    await responder(
+      from,
+      `Por favor responde:
+
+1️⃣ Confirmar cita
+2️⃣ Corregir datos`
+    );
+    return;
+  }
+
+  const datos = {
+    nombre: session.nombreCita,
+    cedula: session.cedulaCita || session.cedula,
+    telefono: session.telefonoCita,
+    correo: session.correoCita,
+    horario: session.horarioCita || "Horario por confirmar",
+    tramite: session.tramite || "Licencia de conducción",
+  };
+
+  await responder(
+    from,
+    "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
+  );
+
+  try {
+    await enviarCorreoCita(datos);
+
+    await responder(from, resumenCita(datos));
+  } catch (error) {
+    console.error("❌ Error enviando correo:", error.message);
+
+    await responder(
+      from,
+      `✅ *Solicitud de cita recibida*
+
+Tus datos quedaron registrados en esta conversación, pero en este momento no fue posible enviar el correo automático.
+
+👤 Nombre: *${datos.nombre}*
+🪪 Cédula: *${datos.cedula}*
+📞 Teléfono: *${datos.telefono}*
+📧 Correo: *${datos.correo}*
+🚗 Trámite: *${datos.tramite}*
+⏰ Horario: *${datos.horario}*
+
+Un asesor continuará con la confirmación final.`
+    );
+  }
+
+  resetSession(from);
+  return;
+}
 
   if (session.step === "DATOS_CITA") {
     const horario = session.horarioCita || "Horario por confirmar";
