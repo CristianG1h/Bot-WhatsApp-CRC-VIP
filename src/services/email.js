@@ -1,33 +1,47 @@
-const nodemailer = require("nodemailer");
-
-function getTransporter() {
-  if (
-    !process.env.SMTP_HOST ||
-    !process.env.SMTP_PORT ||
-    !process.env.SMTP_USER ||
-    !process.env.SMTP_PASS
-  ) {
-    throw new Error("Faltan variables SMTP para enviar correo");
+async function enviarCorreoCita(datos) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("Falta RESEND_API_KEY para enviar correo");
   }
 
-  const port = Number(process.env.SMTP_PORT);
-  const secure =
-    String(process.env.SMTP_SECURE || "").toLowerCase() === "true" ||
-    port === 465;
+  const adminEmail = process.env.MAIL_TO_ADMIN || "ciavipbogota@gmail.com";
+  const mailFrom =
+    process.env.MAIL_FROM || "VIP CRC Galerías <onboarding@resend.dev>";
 
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure,
-    requireTLS: port === 587,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: String(process.env.SMTP_PASS).replace(/\s+/g, ""),
+  const subject = `Cita preconfirmada - ${datos.nombre}`;
+
+  const html = crearHtmlCita(datos);
+  const text = crearTextoCita(datos);
+
+  const destinatarios = [datos.correo];
+
+  if (adminEmail && adminEmail !== datos.correo) {
+    destinatarios.push(adminEmail);
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
     },
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 30000,
+    body: JSON.stringify({
+      from: mailFrom,
+      to: destinatarios,
+      subject,
+      html,
+      text,
+    }),
   });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      `Error Resend ${response.status}: ${JSON.stringify(data)}`
+    );
+  }
+
+  return true;
 }
 
 function crearHtmlCita(datos) {
@@ -51,17 +65,11 @@ function crearHtmlCita(datos) {
         <li><strong>Horario aproximado:</strong> ${datos.horario || "Horario por confirmar"}</li>
       </ul>
 
-      <p>
-        📍 <strong>Dirección:</strong> VIP CRC Galerías, Bogotá.
-      </p>
+      <p>📍 <strong>Dirección:</strong> VIP CRC Galerías, Bogotá.</p>
 
-      <p>
-        Recuerda traer tu documento físico original.
-      </p>
+      <p>Recuerda traer tu documento físico original.</p>
 
-      <p>
-        Un asesor de VIP CRC Galerías podrá contactarte para finalizar la confirmación de tu atención.
-      </p>
+      <p>Un asesor de VIP CRC Galerías podrá contactarte para finalizar la confirmación de tu atención.</p>
 
       <br />
 
@@ -97,36 +105,6 @@ Un asesor de VIP CRC Galerías podrá contactarte para finalizar la confirmació
 
 Gracias,
 VIP CRC Galerías`;
-}
-
-async function enviarCorreoCita(datos) {
-  const transporter = getTransporter();
-
-  const adminEmail = process.env.MAIL_TO_ADMIN || process.env.SMTP_USER;
-
-  const mailFrom =
-    process.env.MAIL_FROM || `"VIP CRC Galerías" <${process.env.SMTP_USER}>`;
-
-  const subject = `Cita preconfirmada - ${datos.nombre}`;
-
-  const html = crearHtmlCita(datos);
-  const text = crearTextoCita(datos);
-
-  const destinatarios = [datos.correo];
-
-  if (adminEmail && adminEmail !== datos.correo) {
-    destinatarios.push(adminEmail);
-  }
-
-  await transporter.sendMail({
-    from: mailFrom,
-    to: destinatarios.join(","),
-    subject,
-    text,
-    html,
-  });
-
-  return true;
 }
 
 module.exports = {
