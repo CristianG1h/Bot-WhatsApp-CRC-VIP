@@ -38,7 +38,8 @@ function crearHtmlCita(datos) {
         <li><strong>Teléfono:</strong> ${datos.telefono}</li>
         <li><strong>Correo:</strong> ${datos.correo}</li>
         <li><strong>Trámite:</strong> ${datos.tramite || "Licencia de conducción"}</li>
-        <li><strong>Horario aproximado:</strong> ${datos.horario}</li>
+        <li><strong>Día:</strong> ${datos.dia || "Día por confirmar"}</li>
+        <li><strong>Horario aproximado:</strong> ${datos.horario || "Horario por confirmar"}</li>
       </ul>
 
       <p>
@@ -63,20 +64,44 @@ function crearHtmlCita(datos) {
   `;
 }
 
+function crearTextoCita(datos) {
+  return `Cita preconfirmada - VIP CRC Galerías
+
+Hola ${datos.nombre},
+
+Tu solicitud de cita fue recibida correctamente.
+
+Datos de la cita:
+- Nombre: ${datos.nombre}
+- Cédula: ${datos.cedula}
+- Teléfono: ${datos.telefono}
+- Correo: ${datos.correo}
+- Trámite: ${datos.tramite || "Licencia de conducción"}
+- Día: ${datos.dia || "Día por confirmar"}
+- Horario aproximado: ${datos.horario || "Horario por confirmar"}
+
+Dirección: VIP CRC Galerías, Bogotá.
+
+Recuerda traer tu documento físico original.
+
+Un asesor de VIP CRC Galerías podrá contactarte para finalizar la confirmación de tu atención.
+
+Gracias,
+VIP CRC Galerías`;
+}
+
 async function enviarCorreoCita(datos) {
   const transporter = getTransporter();
 
-  const adminEmail =
-    process.env.MAIL_TO_ADMIN ||
-    process.env.SMTP_USER;
+  const adminEmail = process.env.MAIL_TO_ADMIN || process.env.SMTP_USER;
 
   const mailFrom =
-    process.env.MAIL_FROM ||
-    `"VIP CRC Galerías" <${process.env.SMTP_USER}>`;
+    process.env.MAIL_FROM || `"VIP CRC Galerías" <${process.env.SMTP_USER}>`;
 
   const subject = `Cita preconfirmada - ${datos.nombre}`;
 
   const html = crearHtmlCita(datos);
+  const text = crearTextoCita(datos);
 
   const destinatarios = [datos.correo];
 
@@ -88,6 +113,7 @@ async function enviarCorreoCita(datos) {
     from: mailFrom,
     to: destinatarios.join(","),
     subject,
+    text,
     html,
   });
 
