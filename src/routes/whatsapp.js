@@ -96,9 +96,24 @@ async function consultarRuntYContinuar(from, cedula) {
     await responder(from, respuesta);
 
     updateSession(from, {
-      step: "AGENDAR",
+      step: "ASISTENCIA",
       cedula,
     });
+
+    await responder(
+      from,
+      `✅ Listo, ya revisamos tu información en RUNT.
+
+Tenemos disponibilidad para atenderte en *VIP CRC Galerías* y puedes dejar adelantado tu examen médico.
+
+Recuerda que el certificado médico del CRC tiene una vigencia de *6 meses*, así que puedes realizarlo desde ahora y avanzar con tu trámite.
+
+¿Cuándo te gustaría asistir?
+
+1️⃣ Hoy
+2️⃣ Mañana
+3️⃣ Otro día`
+    );
   } catch (error) {
     console.error("❌ Error RUNT:", error.message);
 
@@ -703,7 +718,124 @@ De todas formas, vamos a revisar tu información en RUNT.`
   // ─────────────────────────────────────────────
   // FLUJO RUNT NORMAL
   // ─────────────────────────────────────────────
+if (session.step === "ASISTENCIA") {
+  let asistencia = null;
 
+  if (
+    msg === "1" ||
+    msg.includes("hoy") ||
+    msg.includes("si") ||
+    msg.includes("sí") ||
+    msg.includes("puedo ir") ||
+    msg.includes("voy hoy") ||
+    msg.includes("quiero ir hoy")
+  ) {
+    asistencia = "Hoy";
+  }
+
+  if (
+    msg === "2" ||
+    msg.includes("mañana") ||
+    msg.includes("manana") ||
+    msg.includes("voy mañana") ||
+    msg.includes("voy manana")
+  ) {
+    asistencia = "Mañana";
+  }
+
+  if (
+    msg === "3" ||
+    msg.includes("otro") ||
+    msg.includes("otra fecha") ||
+    msg.includes("otro dia") ||
+    msg.includes("otro día") ||
+    msg.includes("después") ||
+    msg.includes("despues")
+  ) {
+    asistencia = "Otro día";
+  }
+
+  if (!asistencia) {
+    await responder(
+      from,
+      `Por favor responde con una opción:
+
+1️⃣ Hoy
+2️⃣ Mañana
+3️⃣ Otro día`
+    );
+    return;
+  }
+
+  updateSession(from, {
+    asistencia,
+    step: "AGENDAR",
+  });
+
+  if (asistencia === "Hoy") {
+    await responder(
+      from,
+      `Excelente ✅
+
+Justo hoy tenemos disponibilidad en *VIP CRC Galerías*.
+
+Para dejar tu atención preconfirmada, por favor envíanos:
+
+👤 Nombre completo
+🪪 Número de cédula
+📞 Teléfono de contacto
+⏰ Hora aproximada en la que puedes venir
+
+Te esperamos para avanzar con tu examen médico.`
+    );
+
+    resetSession(from);
+    return;
+  }
+
+  if (asistencia === "Mañana") {
+    await responder(
+      from,
+      `Perfecto ✅
+
+Podemos dejarte preconfirmado para *mañana* en *VIP CRC Galerías*.
+
+Por favor envíanos:
+
+👤 Nombre completo
+🪪 Número de cédula
+📞 Teléfono de contacto
+⏰ Hora aproximada en la que puedes asistir
+
+Así dejamos tu atención organizada.`
+    );
+
+    resetSession(from);
+    return;
+  }
+
+  if (asistencia === "Otro día") {
+    await responder(
+      from,
+      `Claro ✅
+
+Podemos ayudarte a programar tu atención para otro día.
+
+Por favor envíanos:
+
+👤 Nombre completo
+🪪 Número de cédula
+📞 Teléfono de contacto
+📅 Día en el que deseas asistir
+⏰ Hora aproximada
+
+Un asesor validará la disponibilidad y continuará con tu atención.`
+    );
+
+    resetSession(from);
+    return;
+  }
+}
   if (session.step === "CEDULA") {
     if (!esCedulaValida(text)) {
       await responder(
