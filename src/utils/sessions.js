@@ -3,11 +3,19 @@ const sessions = new Map();
 function getSession(phone) {
   if (!sessions.has(phone)) {
     sessions.set(phone, {
-      step: "MENU_PRINCIPAL",
+      step: "MENU_INICIAL",
+      linea: null,
       tramite: null,
       comparendos: null,
       asistencia: null,
-      cedula: null
+      cedula: null,
+      documentoSimit: null,
+      simitTienePendientes: false,
+      horarioCita: null,
+      nombreCita: null,
+      cedulaCita: null,
+      telefonoCita: null,
+      correoCita: null,
     });
   }
 
@@ -16,15 +24,24 @@ function getSession(phone) {
 
 function updateSession(phone, data) {
   const current = getSession(phone);
-  sessions.set(phone, { ...current, ...data });
+
+  const nuevaSession = {
+    ...current,
+    ...data,
+  };
+
+  sessions.set(phone, nuevaSession);
+
+  console.log("✅ Sesión actualizada:", phone, nuevaSession);
 }
 
 function resetSession(phone) {
   sessions.delete(phone);
+  console.log("🧹 Sesión reiniciada:", phone);
 }
 
 module.exports = {
   getSession,
   updateSession,
-  resetSession
+  resetSession,
 };
