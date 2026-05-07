@@ -158,6 +158,53 @@ async function consultarRuntYContinuar(from, cedula) {
   }
 }
 
+function menuDiasCita() {
+  return `Excelente ✅
+
+Para dejar tu atención preconfirmada, primero elige el día en el que deseas asistir:
+
+1️⃣ Hoy
+2️⃣ Mañana
+3️⃣ Otro día
+
+Responde con el número de la opción.`;
+}
+
+function detectarDia(msg) {
+  if (
+    msg === "1" ||
+    msg.includes("hoy") ||
+    msg.includes("hoy puedo") ||
+    msg.includes("voy hoy")
+  ) {
+    return "Hoy";
+  }
+
+  if (
+    msg === "2" ||
+    msg.includes("mañana") ||
+    msg.includes("manana") ||
+    msg.includes("voy mañana") ||
+    msg.includes("voy manana")
+  ) {
+    return "Mañana";
+  }
+
+  if (
+    msg === "3" ||
+    msg.includes("otro") ||
+    msg.includes("otra") ||
+    msg.includes("otro dia") ||
+    msg.includes("otro día") ||
+    msg.includes("despues") ||
+    msg.includes("después")
+  ) {
+    return "Otro día";
+  }
+
+  return null;
+}
+
 function menuHorariosCita() {
   return `Excelente ✅
 
@@ -260,6 +307,7 @@ function resumenCita(datos) {
 📞 Teléfono: *${datos.telefono}*
 📧 Correo: *${datos.correo}*
 🚗 Trámite: *${datos.tramite || "Licencia de conducción"}*
+📅 Día: *${datos.dia || "Día por confirmar"}*
 ⏰ Horario aproximado: *${datos.horario}*
 
 📍 Recuerda traer tu documento físico original.
@@ -878,11 +926,11 @@ De todas formas, vamos a revisar tu información en RUNT.`
     msg.includes("quiero")
   ) {
     updateSession(from, {
-      step: "HORARIO_CITA",
-    });
+  step: "DIA_CITA",
+});
 
-    await responder(from, menuHorariosCita());
-    return;
+await responder(from, menuDiasCita());
+return;
   }
 
   if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
@@ -910,6 +958,77 @@ Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
   return;
 }
 
+if (session.step === "DIA_CITA") {
+  const dia = detectarDia(msg);
+
+  if (!dia) {
+    await responder(from, menuDiasCita());
+    return;
+  }
+
+  updateSession(from, {
+    diaCita: dia,
+    step: dia === "Otro día" ? "DIA_PERSONALIZADO" : "HORARIO_CITA",
+  });
+
+  if (dia === "Otro día") {
+    await responder(
+      from,
+      `Perfecto ✅
+
+Indícanos qué día deseas asistir.
+
+Ejemplo:
+*Viernes*
+*El lunes*
+*15 de mayo*
+*La otra semana*`
+    );
+    return;
+  }
+
+  await responder(
+    from,
+    `Perfecto ✅
+
+Día seleccionado: *${dia}*
+
+Ahora elige un horario aproximado de llegada.`
+  );
+
+  await responder(from, menuHorariosCita());
+  return;
+}
+
+if (session.step === "DIA_PERSONALIZADO") {
+  const diaPersonalizado = text.trim();
+
+  if (diaPersonalizado.length < 3) {
+    await responder(
+      from,
+      "Por favor indícanos un día más claro. Ejemplo: *viernes*, *lunes* o *15 de mayo*."
+    );
+    return;
+  }
+
+  updateSession(from, {
+    diaCita: diaPersonalizado,
+    step: "HORARIO_CITA",
+  });
+
+  await responder(
+    from,
+    `Listo ✅
+
+Día solicitado: *${diaPersonalizado}*
+
+Ahora elige un horario aproximado de llegada.`
+  );
+
+  await responder(from, menuHorariosCita());
+  return;
+}
+  
 if (session.step === "HORARIO_CITA") {
   const horario = detectarHorario(msg);
 
@@ -1075,13 +1194,14 @@ if (session.step === "CORREO_CITA") {
   });
 
   const datos = {
-    nombre: session.nombreCita,
-    cedula: session.cedulaCita || session.cedula,
-    telefono: session.telefonoCita,
-    correo,
-    horario: session.horarioCita || "Horario por confirmar",
-    tramite: session.tramite || "Licencia de conducción",
-  };
+  nombre: session.nombreCita,
+  cedula: session.cedulaCita || session.cedula,
+  telefono: session.telefonoCita,
+  correo,
+  dia: session.diaCita || "Día por confirmar",
+  horario: session.horarioCita || "Horario por confirmar",
+  tramite: session.tramite || "Licencia de conducción",
+};
 
   await responder(
     from,
@@ -1092,6 +1212,7 @@ if (session.step === "CORREO_CITA") {
 📞 Teléfono: *${datos.telefono}*
 📧 Correo: *${datos.correo}*
 🚗 Trámite: *${datos.tramite}*
+📅 Día: *${datos.dia}*
 ⏰ Horario: *${datos.horario}*
 
 1️⃣ Confirmar cita
@@ -1176,6 +1297,7 @@ Tus datos quedaron registrados en esta conversación, pero en este momento no fu
 📞 Teléfono: *${datos.telefono}*
 📧 Correo: *${datos.correo}*
 🚗 Trámite: *${datos.tramite}*
+📅 Día: *${datos.dia}*
 ⏰ Horario: *${datos.horario}*
 
 Un asesor continuará con la confirmación final.`
