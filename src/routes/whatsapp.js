@@ -158,13 +158,42 @@ async function consultarRuntYContinuar(from, cedula) {
   }
 }
 
+function obtenerFechaBogota(offsetDias = 0) {
+  const fechaBase = new Date();
+
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(fechaBase);
+
+  const fecha = new Date(`${partes}T12:00:00-05:00`);
+  fecha.setDate(fecha.getDate() + offsetDias);
+
+  return fecha;
+}
+
+function formatearFechaColombia(fecha) {
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(fecha);
+}
+
 function menuDiasCita() {
+  const hoy = formatearFechaColombia(obtenerFechaBogota(0));
+  const manana = formatearFechaColombia(obtenerFechaBogota(1));
+
   return `Excelente ✅
 
 Para dejar tu atención preconfirmada, primero elige el día en el que deseas asistir:
 
-1️⃣ Hoy
-2️⃣ Mañana
+1️⃣ Hoy - ${hoy}
+2️⃣ Mañana - ${manana}
 3️⃣ Otro día
 
 Responde con el número de la opción.`;
@@ -177,7 +206,7 @@ function detectarDia(msg) {
     msg.includes("hoy puedo") ||
     msg.includes("voy hoy")
   ) {
-    return "Hoy";
+    return formatearFechaColombia(obtenerFechaBogota(0));
   }
 
   if (
@@ -187,7 +216,7 @@ function detectarDia(msg) {
     msg.includes("voy mañana") ||
     msg.includes("voy manana")
   ) {
-    return "Mañana";
+    return formatearFechaColombia(obtenerFechaBogota(1));
   }
 
   if (
@@ -979,10 +1008,10 @@ if (session.step === "DIA_CITA") {
 Indícanos qué día deseas asistir.
 
 Ejemplo:
-*Viernes*
-*El lunes*
-*15 de mayo*
-*La otra semana*`
+*viernes 8 de mayo de 2026*
+*lunes 11 de mayo de 2026*
+*15 de mayo de 2026*
+*la otra semana*`
     );
     return;
   }
@@ -991,7 +1020,8 @@ Ejemplo:
     from,
     `Perfecto ✅
 
-Día seleccionado: *${dia}*
+Día seleccionado:
+📅 *${dia}*
 
 Ahora elige un horario aproximado de llegada.`
   );
@@ -1006,7 +1036,7 @@ if (session.step === "DIA_PERSONALIZADO") {
   if (diaPersonalizado.length < 3) {
     await responder(
       from,
-      "Por favor indícanos un día más claro. Ejemplo: *viernes*, *lunes* o *15 de mayo*."
+      "Por favor indícanos un día más claro. Ejemplo: *viernes 8 de mayo de 2026*, *lunes* o *15 de mayo*."
     );
     return;
   }
@@ -1020,7 +1050,8 @@ if (session.step === "DIA_PERSONALIZADO") {
     from,
     `Listo ✅
 
-Día solicitado: *${diaPersonalizado}*
+Día solicitado:
+📅 *${diaPersonalizado}*
 
 Ahora elige un horario aproximado de llegada.`
   );
@@ -1221,6 +1252,14 @@ if (session.step === "CORREO_CITA") {
   return;
 }
 
+if (session.step === "ENVIANDO_CORREO_CITA") {
+  await responder(
+    from,
+    "Estamos procesando tu confirmación y enviando el correo ✅\nPor favor espera un momento."
+  );
+  return;
+}
+  
 if (session.step === "CONFIRMAR_CITA") {
   if (
     msg === "2" ||
@@ -1266,18 +1305,22 @@ Vamos a tomar los datos nuevamente.`
   }
 
   const datos = {
-    nombre: session.nombreCita,
-    cedula: session.cedulaCita || session.cedula,
-    telefono: session.telefonoCita,
-    correo: session.correoCita,
-    horario: session.horarioCita || "Horario por confirmar",
-    tramite: session.tramite || "Licencia de conducción",
-  };
+  nombre: session.nombreCita,
+  cedula: session.cedulaCita || session.cedula,
+  telefono: session.telefonoCita,
+  correo: session.correoCita,
+  dia: session.diaCita || "Día por confirmar",
+  horario: session.horarioCita || "Horario por confirmar",
+  tramite: session.tramite || "Licencia de conducción",
+};
 
   await responder(
     from,
     "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
   );
+  updateSession(from, {
+  step: "ENVIANDO_CORREO_CITA",
+});
 
   try {
     await enviarCorreoCita(datos);
