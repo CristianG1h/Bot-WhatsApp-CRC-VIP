@@ -765,22 +765,70 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/twilio", async (req, res) => {
+rrouter.post("/chatwoot", async (req, res) => {
   res.status(200).send("OK");
 
   try {
-    const from = req.body.From;
-    const text = limpiarTexto(req.body.Body);
+    const payload = req.body || {};
 
-    if (!from || !text) return;
+    const event = payload.event;
+    const messageType = payload.message_type || payload.message?.message_type;
+    const content = payload.content || payload.message?.content || "";
 
-    await procesarMensaje(from, text);
+    const isPrivate =
+      payload.private === true ||
+      payload.message?.private === true;
+
+    if (event && event !== "message_created") return;
+    if (messageType !== "incoming") return;
+    if (isPrivate) return;
+    if (!content || !String(content).trim()) return;
+
+    const sender =
+      payload.sender ||
+      payload.message?.sender ||
+      payload.conversation?.contact ||
+      payload.contact ||
+      {};
+
+    const contact =
+      payload.conversation?.contact ||
+      payload.contact ||
+      sender ||
+      {};
+
+    const phone =
+      sender.phone_number ||
+      contact.phone_number ||
+      payload.conversation?.meta?.sender?.phone_number ||
+      payload.conversation?.contact_inbox?.source_id ||
+      payload.contact_inbox?.source_id ||
+      "";
+
+    if (!phone) {
+      console.log("⚠️ Webhook Chatwoot sin teléfono:", JSON.stringify(payload));
+      return;
+    }
+
+    const from = phone.startsWith("whatsapp:")
+      ? phone
+      : `whatsapp:${phone.startsWith("+") ? phone : `+${phone}`}`;
+
+    const text = limpiarTexto(content);
+
+    console.log("📩 Mensaje recibido desde Chatwoot:", text);
+    console.log("Usuario:", from);
+
+    await procesarMensaje(from, text, {
+      source: "chatwoot",
+      skipChatwootIncomingLog: true,
+    });
   } catch (error) {
-    console.error("❌ Error webhook Twilio:", error.message);
+    console.error("❌ Error webhook Chatwoot:", error.message);
   }
 });
 
-async function procesarMensaje(from, text) {
+async function procesarMensaje(from, text, options = {}) {
   const session = getSession(from);
   const msg = text.toLowerCase().trim();
 
@@ -788,11 +836,14 @@ async function procesarMensaje(from, text) {
   console.log("Usuario:", from);
   console.log("➡️ Paso actual:", session.step);
   
+  if (!options.skipChatwootIncomingLog) {
   await logIncomingMessage(from, text, {
-  custom_attributes: {
-    paso_actual: session.step,
-  },
-});
+    custom_attributes: {
+      paso_actual: session.step,
+      source: options.source || "direct",
+    },
+  });
+}
 
   if (isRateLimited(from, session.step)) {
   await responder(
