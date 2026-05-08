@@ -20,11 +20,6 @@ const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
 const { enviarCorreoCita } = require("../services/email");
-const {
-  logIncomingMessage,
-  logOutgoingMessage,
-  markNeedsAgent,
-} = require("../services/chatwoot");
 
 async function responder(to, body) {
   const texto = String(body || "");
@@ -37,14 +32,10 @@ async function responder(to, body) {
       await esperar(700);
     }
 
-    await logOutgoingMessage(to, texto);
     return;
   }
 
-  const resultado = await sendText(to, texto);
-
-  await logOutgoingMessage(to, texto);
-  return resultado;
+  return sendText(to, texto);
 }
 
 function dividirMensaje(texto, max = 1300) {
@@ -681,12 +672,13 @@ async function transferirAAsesor(
     asesorDisponible,
   });
 
-  await markNeedsAgent(
-    from,
-    asesorDisponible
-      ? `${motivo} - Dentro del horario de asesor`
-      : `${motivo} - Fuera del horario de asesor`
-  );
+  console.log(
+  "🔔 Transferencia a asesor:",
+  from,
+  asesorDisponible
+    ? `${motivo} - Dentro del horario de asesor`
+    : `${motivo} - Fuera del horario de asesor`
+);
 
   if (asesorDisponible) {
     await responder(
@@ -836,15 +828,6 @@ async function procesarMensaje(from, text, options = {}) {
   console.log("Usuario:", from);
   console.log("➡️ Paso actual:", session.step);
   
-  if (!options.skipChatwootIncomingLog) {
-  await logIncomingMessage(from, text, {
-    custom_attributes: {
-      paso_actual: session.step,
-      source: options.source || "direct",
-    },
-  });
-}
-
   if (isRateLimited(from, session.step)) {
   await responder(
     from,
@@ -869,12 +852,13 @@ if (session.step === "HUMANO") {
     asesorDisponible,
   });
 
-  await markNeedsAgent(
-    from,
-    asesorDisponible
-      ? "Usuario respondió en modo asesor dentro del horario disponible"
-      : "Usuario respondió en modo asesor fuera del horario disponible"
-  );
+ console.log(
+  "🔔 Usuario en modo asesor:",
+  from,
+  asesorDisponible
+    ? "Usuario respondió en modo asesor dentro del horario disponible"
+    : "Usuario respondió en modo asesor fuera del horario disponible"
+);
 
   if (!asesorDisponible && !session.avisoFueraHorarioEnviado) {
     updateSession(from, {
