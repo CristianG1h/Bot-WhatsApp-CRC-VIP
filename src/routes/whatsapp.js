@@ -598,6 +598,64 @@ function esTelefonoValido(telefono) {
   return limpio.length >= 7 && limpio.length <= 13;
 }
 
+function obtenerAhoraBogotaParaAsesor() {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const mapa = {};
+
+  for (const parte of partes) {
+    if (parte.type !== "literal") {
+      mapa[parte.type] = parte.value;
+    }
+  }
+
+  let hour = Number(mapa.hour || 0);
+
+  if (hour === 24) {
+    hour = 0;
+  }
+
+  return {
+    year: Number(mapa.year),
+    month: Number(mapa.month),
+    day: Number(mapa.day),
+    hour,
+    minute: Number(mapa.minute || 0),
+  };
+}
+
+function esHorarioAsesorDisponible() {
+  const ahora = obtenerAhoraBogotaParaAsesor();
+
+  const fecha = new Date(
+    Date.UTC(ahora.year, ahora.month - 1, ahora.day, 12, 0, 0)
+  );
+
+  const diaSemana = fecha.getUTCDay(); 
+  const minutos = ahora.hour * 60 + ahora.minute;
+
+  const esLunesAViernes = diaSemana >= 1 && diaSemana <= 5;
+  const inicio = 12 * 60; // 12:00 p.m.
+  const fin = 19 * 60; // 7:00 p.m.
+
+  return esLunesAViernes && minutos >= inicio && minutos < fin;
+}
+
+function textoHorarioAsesor() {
+  return `🕛 *Horario de atención con asesor:*
+Lunes a viernes de *12:00 p.m. a 7:00 p.m.*
+
+Fuera de ese horario puedes dejar tu consulta y un asesor la revisará en el próximo turno disponible.`;
+}
+
 function esSolicitudAsesor(msg) {
   return (
     msg.includes("asesor") ||
@@ -611,21 +669,49 @@ function esSolicitudAsesor(msg) {
   );
 }
 
-async function transferirAAsesor(from, motivo = "Usuario solicitó hablar con asesor") {
+async function transferirAAsesor(
+  from,
+  motivo = "Usuario solicitó hablar con asesor"
+) {
+  const asesorDisponible = esHorarioAsesorDisponible();
+
   updateSession(from, {
     step: "HUMANO",
     necesitaAsesor: true,
+    asesorDisponible,
   });
 
-  await markNeedsAgent(from, motivo);
+  await markNeedsAgent(
+    from,
+    asesorDisponible
+      ? `${motivo} - Dentro del horario de asesor`
+      : `${motivo} - Fuera del horario de asesor`
+  );
+
+  if (asesorDisponible) {
+    await responder(
+      from,
+      `Perfecto ✅
+
+Un asesor continuará con tu atención por este mismo chat.
+
+Por favor déjanos tu consulta y en cuanto un asesor esté disponible te responderá.`
+    );
+
+    return;
+  }
 
   await responder(
     from,
     `Perfecto ✅
 
-Un asesor continuará con tu atención por este mismo chat.
+En este momento nuestros asesores no se encuentran disponibles.
 
-Por favor déjanos tu consulta y en cuanto un asesor esté disponible te responderá.`
+${textoHorarioAsesor()}
+
+Déjanos por favor tu consulta en este chat y un asesor te responderá en el próximo horario disponible.
+
+También puedes escribir *menu* si deseas volver al asistente automático.`
   );
 }
 
@@ -709,30 +795,67 @@ async function procesarMensaje(from, text) {
 });
 
   if (isRateLimited(from, session.step)) {
-    await responder(
-      from,
-      "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
-    );
-    return;
-  }
+  await responder(
+    from,
+    "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
+  );
+  return;
+}
 
-  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+// Si el usuario está con asesor, el bot NO debe responder automático.
+// Solo se reinicia si escribe explícitamente menu, menú, inicio o volver.
+if (session.step === "HUMANO") {
+  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
     resetSession(from);
     updateSession(from, { step: "MENU_INICIAL" });
     await responder(from, menuInicial());
     return;
   }
 
-  if (esSolicitudAsesor(msg)) {
+  const asesorDisponible = esHorarioAsesorDisponible();
+
+  updateSession(from, {
+    asesorDisponible,
+  });
+
+  await markNeedsAgent(
+    from,
+    asesorDisponible
+      ? "Usuario respondió en modo asesor dentro del horario disponible"
+      : "Usuario respondió en modo asesor fuera del horario disponible"
+  );
+
+  if (!asesorDisponible && !session.avisoFueraHorarioEnviado) {
+    updateSession(from, {
+      avisoFueraHorarioEnviado: true,
+    });
+
+    await responder(
+      from,
+      `Gracias ✅
+
+Tu mensaje quedó registrado para el asesor.
+
+${textoHorarioAsesor()}
+
+Un asesor te responderá en el próximo horario disponible.`
+    );
+  }
+
+  return;
+}
+
+if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+  resetSession(from);
+  updateSession(from, { step: "MENU_INICIAL" });
+  await responder(from, menuInicial());
+  return;
+}
+
+if (esSolicitudAsesor(msg)) {
   await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
   return;
 }
-
-if (session.step === "HUMANO") {
-  await markNeedsAgent(from, "Usuario respondió después de ser transferido a asesor");
-  return;
-}
-
   if (session.step === "MENU_INICIAL") {
     if (msg === "1" || msg.includes("crc")) {
       updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
