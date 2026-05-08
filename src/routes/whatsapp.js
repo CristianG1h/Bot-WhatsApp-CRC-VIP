@@ -20,6 +20,11 @@ const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
 const { enviarCorreoCita } = require("../services/email");
+const {
+  logIncomingMessage,
+  logOutgoingMessage,
+  markNeedsAgent,
+} = require("../services/chatwoot");
 
 async function responder(to, body) {
   const texto = String(body || "");
@@ -32,10 +37,14 @@ async function responder(to, body) {
       await esperar(700);
     }
 
+    await logOutgoingMessage(to, texto);
     return;
   }
 
-  return sendText(to, texto);
+  const resultado = await sendText(to, texto);
+
+  await logOutgoingMessage(to, texto);
+  return resultado;
 }
 
 function dividirMensaje(texto, max = 1300) {
