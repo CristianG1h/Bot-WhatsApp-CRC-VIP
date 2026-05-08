@@ -158,6 +158,7 @@ async function consultarRuntYContinuar(from, cedula) {
   }
 }
 
+
 const DIAS_SEMANA = [
   "domingo",
   "lunes",
@@ -183,23 +184,17 @@ const MESES = [
   "diciembre",
 ];
 
-function obtenerFechaBogota(offsetDias = 0) {
-  const fechaBase = new Date();
-
-  const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(fechaBase);
-
-  const fecha = new Date(`${partes}T12:00:00-05:00`);
-  fecha.setDate(fecha.getDate() + offsetDias);
-
-  return fecha;
+/**
+ * IMPORTANTE:
+ * Estas fechas se manejan como "fecha/hora local de Bogotá" guardada en UTC.
+ * Por eso usamos getUTCFullYear, getUTCMonth, getUTCDate, getUTCHours, etc.
+ * Así evitamos que Render cambie la hora por la zona horaria del servidor.
+ */
+function crearFechaLocalBogota(year, month, day, hour = 12, minute = 0) {
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
 }
 
-function obtenerAhoraBogota() {
+function partesFechaBogota(fecha = new Date()) {
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",
     year: "numeric",
@@ -208,49 +203,74 @@ function obtenerAhoraBogota() {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).formatToParts(new Date());
+  }).formatToParts(fecha);
 
   const mapa = {};
+
   for (const parte of partes) {
-    if (parte.type !== "literal") mapa[parte.type] = parte.value;
+    if (parte.type !== "literal") {
+      mapa[parte.type] = parte.value;
+    }
   }
 
-  return new Date(
-    `${mapa.year}-${mapa.month}-${mapa.day}T${mapa.hour}:${mapa.minute}:00-05:00`
-  );
+  let hour = Number(mapa.hour || 0);
+
+  if (hour === 24) {
+    hour = 0;
+  }
+
+  return {
+    year: Number(mapa.year),
+    month: Number(mapa.month),
+    day: Number(mapa.day),
+    hour,
+    minute: Number(mapa.minute || 0),
+  };
+}
+
+function obtenerFechaBogota(offsetDias = 0) {
+  const p = partesFechaBogota(new Date());
+  const fecha = crearFechaLocalBogota(p.year, p.month, p.day, 12, 0);
+  fecha.setUTCDate(fecha.getUTCDate() + offsetDias);
+  return fecha;
+}
+
+function obtenerAhoraBogota() {
+  const p = partesFechaBogota(new Date());
+  return crearFechaLocalBogota(p.year, p.month, p.day, p.hour, p.minute);
 }
 
 function fechaKey(fecha) {
-  const year = fecha.getFullYear();
-  const month = String(fecha.getMonth() + 1).padStart(2, "0");
-  const day = String(fecha.getDate()).padStart(2, "0");
+  const year = fecha.getUTCFullYear();
+  const month = String(fecha.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(fecha.getUTCDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
 function formatearFechaColombia(fecha) {
-  const diaSemana = DIAS_SEMANA[fecha.getDay()];
-  const dia = fecha.getDate();
-  const mes = MESES[fecha.getMonth()];
-  const year = fecha.getFullYear();
+  const diaSemana = DIAS_SEMANA[fecha.getUTCDay()];
+  const dia = fecha.getUTCDate();
+  const mes = MESES[fecha.getUTCMonth()];
+  const year = fecha.getUTCFullYear();
 
   return `${diaSemana}, ${dia} de ${mes} de ${year}`;
 }
 
 function sumarDias(fecha, dias) {
   const nueva = new Date(fecha);
-  nueva.setDate(nueva.getDate() + dias);
+  nueva.setUTCDate(nueva.getUTCDate() + dias);
   return nueva;
 }
 
 function siguienteLunes(fecha) {
   const nueva = new Date(fecha);
-  const dia = nueva.getDay();
+  const dia = nueva.getUTCDay();
 
   if (dia === 1) return nueva;
 
   const diasParaLunes = (8 - dia) % 7;
-  nueva.setDate(nueva.getDate() + diasParaLunes);
+  nueva.setUTCDate(nueva.getUTCDate() + diasParaLunes);
 
   return nueva;
 }
@@ -271,20 +291,19 @@ function fechaPascua(year) {
   const month = Math.floor((h + l - 7 * m + 114) / 31);
   const day = ((h + l - 7 * m + 114) % 31) + 1;
 
-  return new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`);
+  return crearFechaLocalBogota(year, month, day);
 }
 
 function festivosColombia(year) {
   const pascua = fechaPascua(year);
-
   const festivos = [];
 
   function fijo(month, day) {
-    festivos.push(new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`));
+    festivos.push(crearFechaLocalBogota(year, month, day));
   }
 
   function leyEmiliani(month, day) {
-    const fecha = new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`);
+    const fecha = crearFechaLocalBogota(year, month, day);
     festivos.push(siguienteLunes(fecha));
   }
 
@@ -313,19 +332,19 @@ function festivosColombia(year) {
 }
 
 function esFestivoColombia(fecha) {
-  return festivosColombia(fecha.getFullYear()).has(fechaKey(fecha));
+  return festivosColombia(fecha.getUTCFullYear()).has(fechaKey(fecha));
 }
 
 function esDomingo(fecha) {
-  return fecha.getDay() === 0;
+  return fecha.getUTCDay() === 0;
+}
+
+function esSabado(fecha) {
+  return fecha.getUTCDay() === 6;
 }
 
 function esDiaLaboralCRC(fecha) {
   return !esDomingo(fecha) && !esFestivoColombia(fecha);
-}
-
-function esSabado(fecha) {
-  return fecha.getDay() === 6;
 }
 
 function obtenerSiguienteDiaLaboral(fechaInicial) {
@@ -344,7 +363,7 @@ function esMismaFecha(a, b) {
 }
 
 function minutosDelDia(fecha) {
-  return fecha.getHours() * 60 + fecha.getMinutes();
+  return fecha.getUTCHours() * 60 + fecha.getUTCMinutes();
 }
 
 function horaTexto(minutos) {
@@ -370,8 +389,16 @@ function slotsBasePorFecha(fecha) {
     { inicio: 7 * 60, fin: 9 * 60 },
     { inicio: 9 * 60, fin: 11 * 60 },
     { inicio: 11 * 60, fin: 13 * 60 },
-    { inicio: 13 * 60, fin: 15 * 60 },
-    { inicio: 14 * 60, fin: 15 * 60 + 30 },
+    { inicio: 13 * 60, fin: 15 * 60 + 30 },
+  ];
+}
+
+function slotsHabitualesParaDiaPersonalizado() {
+  return [
+    { inicio: 7 * 60, fin: 9 * 60 },
+    { inicio: 9 * 60, fin: 11 * 60 },
+    { inicio: 11 * 60, fin: 13 * 60 },
+    { inicio: 13 * 60, fin: 15 * 60 + 30 },
   ];
 }
 
@@ -391,9 +418,7 @@ function obtenerSlotsDisponibles(fecha) {
     })
     .map((slot) => {
       const inicioTexto =
-        esHoy && ahoraMin > slot.inicio
-          ? "Ahora"
-          : horaTexto(slot.inicio);
+        esHoy && ahoraMin > slot.inicio ? "Ahora" : horaTexto(slot.inicio);
 
       return {
         ...slot,
@@ -441,6 +466,7 @@ function detectarDia(msg) {
     msg.includes("voy hoy")
   ) {
     const fecha = obtenerFechaBogota(0);
+
     return {
       tipo: "fecha",
       fecha,
@@ -456,6 +482,7 @@ function detectarDia(msg) {
     msg.includes("voy manana")
   ) {
     const fecha = obtenerFechaBogota(1);
+
     return {
       tipo: "fecha",
       fecha,
@@ -483,7 +510,10 @@ function detectarDia(msg) {
 }
 
 function menuHorariosCita(fechaCita = null) {
-  const fecha = fechaCita ? new Date(fechaCita) : obtenerSiguienteDiaLaboral(obtenerFechaBogota(0));
+  const fecha = fechaCita
+    ? new Date(fechaCita)
+    : obtenerSiguienteDiaLaboral(obtenerFechaBogota(0));
+
   const slots = obtenerSlotsDisponibles(fecha);
 
   if (slots.length === 0) {
@@ -513,8 +543,12 @@ Responde con el número de la opción.`;
 }
 
 function detectarHorario(msg, fechaCita = null) {
-  const fecha = fechaCita ? new Date(fechaCita) : obtenerSiguienteDiaLaboral(obtenerFechaBogota(0));
-  const slots = obtenerSlotsDisponibles(fecha);
+  const slots = fechaCita
+    ? obtenerSlotsDisponibles(fechaCita)
+    : slotsHabitualesParaDiaPersonalizado().map((slot) => ({
+        ...slot,
+        texto: `${horaTexto(slot.inicio)} a ${horaTexto(slot.fin)}`,
+      }));
 
   const numero = Number(msg);
 
@@ -1336,9 +1370,8 @@ Ahora elige un horario aproximado de llegada.`
 1️⃣ 7:00 a.m. a 9:00 a.m.
 2️⃣ 9:00 a.m. a 11:00 a.m.
 3️⃣ 11:00 a.m. a 1:00 p.m.
-4️⃣ 1:00 p.m. a 3:00 p.m.
-5️⃣ 3:00 p.m. a 3:30 p.m.
-6️⃣ Otro horario
+4️⃣ 1:00 p.m. a 3:30 p.m.
+5️⃣ Otro horario
 
 Recuerda:
 Lunes a viernes: 7:00 a.m. a 3:30 p.m.
@@ -1368,9 +1401,8 @@ if (session.step === "HORARIO_CITA") {
 1️⃣ 7:00 a.m. a 9:00 a.m.
 2️⃣ 9:00 a.m. a 11:00 a.m.
 3️⃣ 11:00 a.m. a 1:00 p.m.
-4️⃣ 1:00 p.m. a 3:00 p.m.
-5️⃣ 3:00 p.m. a 3:30 p.m.
-6️⃣ Otro horario`
+4️⃣ 1:00 p.m. a 3:30 p.m.
+5️⃣ Otro horario`
       );
     }
     return;
