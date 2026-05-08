@@ -158,6 +158,31 @@ async function consultarRuntYContinuar(from, cedula) {
   }
 }
 
+const DIAS_SEMANA = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
+];
+
+const MESES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+];
+
 function obtenerFechaBogota(offsetDias = 0) {
   const fechaBase = new Date();
 
@@ -174,27 +199,236 @@ function obtenerFechaBogota(offsetDias = 0) {
   return fecha;
 }
 
-function formatearFechaColombia(fecha) {
-  return new Intl.DateTimeFormat("es-CO", {
+function obtenerAhoraBogota() {
+  const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
     year: "numeric",
-  }).format(fecha);
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const mapa = {};
+  for (const parte of partes) {
+    if (parte.type !== "literal") mapa[parte.type] = parte.value;
+  }
+
+  return new Date(
+    `${mapa.year}-${mapa.month}-${mapa.day}T${mapa.hour}:${mapa.minute}:00-05:00`
+  );
+}
+
+function fechaKey(fecha) {
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, "0");
+  const day = String(fecha.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatearFechaColombia(fecha) {
+  const diaSemana = DIAS_SEMANA[fecha.getDay()];
+  const dia = fecha.getDate();
+  const mes = MESES[fecha.getMonth()];
+  const year = fecha.getFullYear();
+
+  return `${diaSemana}, ${dia} de ${mes} de ${year}`;
+}
+
+function sumarDias(fecha, dias) {
+  const nueva = new Date(fecha);
+  nueva.setDate(nueva.getDate() + dias);
+  return nueva;
+}
+
+function siguienteLunes(fecha) {
+  const nueva = new Date(fecha);
+  const dia = nueva.getDay();
+
+  if (dia === 1) return nueva;
+
+  const diasParaLunes = (8 - dia) % 7;
+  nueva.setDate(nueva.getDate() + diasParaLunes);
+
+  return nueva;
+}
+
+function fechaPascua(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+
+  return new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`);
+}
+
+function festivosColombia(year) {
+  const pascua = fechaPascua(year);
+
+  const festivos = [];
+
+  function fijo(month, day) {
+    festivos.push(new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`));
+  }
+
+  function leyEmiliani(month, day) {
+    const fecha = new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00-05:00`);
+    festivos.push(siguienteLunes(fecha));
+  }
+
+  fijo(1, 1);
+  leyEmiliani(1, 6);
+  leyEmiliani(3, 19);
+
+  festivos.push(sumarDias(pascua, -3)); // Jueves Santo
+  festivos.push(sumarDias(pascua, -2)); // Viernes Santo
+  festivos.push(siguienteLunes(sumarDias(pascua, 39))); // Ascensión
+  festivos.push(siguienteLunes(sumarDias(pascua, 60))); // Corpus Christi
+  festivos.push(siguienteLunes(sumarDias(pascua, 68))); // Sagrado Corazón
+
+  fijo(5, 1);
+  leyEmiliani(6, 29);
+  fijo(7, 20);
+  fijo(8, 7);
+  leyEmiliani(8, 15);
+  leyEmiliani(10, 12);
+  leyEmiliani(11, 1);
+  leyEmiliani(11, 11);
+  fijo(12, 8);
+  fijo(12, 25);
+
+  return new Set(festivos.map(fechaKey));
+}
+
+function esFestivoColombia(fecha) {
+  return festivosColombia(fecha.getFullYear()).has(fechaKey(fecha));
+}
+
+function esDomingo(fecha) {
+  return fecha.getDay() === 0;
+}
+
+function esDiaLaboralCRC(fecha) {
+  return !esDomingo(fecha) && !esFestivoColombia(fecha);
+}
+
+function esSabado(fecha) {
+  return fecha.getDay() === 6;
+}
+
+function obtenerSiguienteDiaLaboral(fechaInicial) {
+  let fecha = new Date(fechaInicial);
+
+  for (let i = 0; i < 15; i++) {
+    if (esDiaLaboralCRC(fecha)) return fecha;
+    fecha = sumarDias(fecha, 1);
+  }
+
+  return fecha;
+}
+
+function esMismaFecha(a, b) {
+  return fechaKey(a) === fechaKey(b);
+}
+
+function minutosDelDia(fecha) {
+  return fecha.getHours() * 60 + fecha.getMinutes();
+}
+
+function horaTexto(minutos) {
+  const h24 = Math.floor(minutos / 60);
+  const min = minutos % 60;
+  const periodo = h24 >= 12 ? "p.m." : "a.m.";
+  let h12 = h24 % 12;
+
+  if (h12 === 0) h12 = 12;
+
+  return `${h12}:${String(min).padStart(2, "0")} ${periodo}`;
+}
+
+function slotsBasePorFecha(fecha) {
+  if (esSabado(fecha)) {
+    return [
+      { inicio: 7 * 60, fin: 9 * 60 },
+      { inicio: 9 * 60, fin: 11 * 60 },
+    ];
+  }
+
+  return [
+    { inicio: 7 * 60, fin: 9 * 60 },
+    { inicio: 9 * 60, fin: 11 * 60 },
+    { inicio: 11 * 60, fin: 13 * 60 },
+    { inicio: 13 * 60, fin: 15 * 60 },
+    { inicio: 14 * 60, fin: 15 * 60 + 30 },
+  ];
+}
+
+function obtenerSlotsDisponibles(fecha) {
+  if (!esDiaLaboralCRC(fecha)) return [];
+
+  const ahora = obtenerAhoraBogota();
+  const esHoy = esMismaFecha(fecha, ahora);
+  const ahoraMin = minutosDelDia(ahora);
+  const margenMin = 15;
+
+  return slotsBasePorFecha(fecha)
+    .filter((slot) => {
+      if (!esHoy) return true;
+
+      return slot.fin > ahoraMin + margenMin;
+    })
+    .map((slot) => {
+      const inicioTexto =
+        esHoy && ahoraMin > slot.inicio
+          ? "Ahora"
+          : horaTexto(slot.inicio);
+
+      return {
+        ...slot,
+        texto: `${inicioTexto} a ${horaTexto(slot.fin)}`,
+      };
+    });
 }
 
 function menuDiasCita() {
-  const hoy = formatearFechaColombia(obtenerFechaBogota(0));
-  const manana = formatearFechaColombia(obtenerFechaBogota(1));
+  const hoy = obtenerFechaBogota(0);
+  const manana = obtenerFechaBogota(1);
+
+  const hoyLaboral = esDiaLaboralCRC(hoy);
+  const mananaLaboral = esDiaLaboralCRC(manana);
+
+  const textoHoy = hoyLaboral
+    ? formatearFechaColombia(hoy)
+    : `${formatearFechaColombia(hoy)} - No laboramos`;
+
+  const textoManana = mananaLaboral
+    ? formatearFechaColombia(manana)
+    : `${formatearFechaColombia(manana)} - No laboramos`;
 
   return `Excelente ✅
 
 Para dejar tu atención preconfirmada, primero elige el día en el que deseas asistir:
 
-1️⃣ Hoy - ${hoy}
-2️⃣ Mañana - ${manana}
+1️⃣ Hoy - ${textoHoy}
+2️⃣ Mañana - ${textoManana}
 3️⃣ Otro día
+
+🕒 Horario de atención:
+Lunes a viernes: 7:00 a.m. a 3:30 p.m.
+Sábados: 7:00 a.m. a 11:00 a.m.
+Domingos y festivos: no laboramos.
 
 Responde con el número de la opción.`;
 }
@@ -206,7 +440,12 @@ function detectarDia(msg) {
     msg.includes("hoy puedo") ||
     msg.includes("voy hoy")
   ) {
-    return formatearFechaColombia(obtenerFechaBogota(0));
+    const fecha = obtenerFechaBogota(0);
+    return {
+      tipo: "fecha",
+      fecha,
+      texto: formatearFechaColombia(fecha),
+    };
   }
 
   if (
@@ -216,7 +455,12 @@ function detectarDia(msg) {
     msg.includes("voy mañana") ||
     msg.includes("voy manana")
   ) {
-    return formatearFechaColombia(obtenerFechaBogota(1));
+    const fecha = obtenerFechaBogota(1);
+    return {
+      tipo: "fecha",
+      fecha,
+      texto: formatearFechaColombia(fecha),
+    };
   }
 
   if (
@@ -228,92 +472,75 @@ function detectarDia(msg) {
     msg.includes("despues") ||
     msg.includes("después")
   ) {
-    return "Otro día";
+    return {
+      tipo: "otro",
+      fecha: null,
+      texto: "Otro día",
+    };
   }
 
   return null;
 }
 
-function menuHorariosCita() {
-  return `Excelente ✅
+function menuHorariosCita(fechaCita = null) {
+  const fecha = fechaCita ? new Date(fechaCita) : obtenerSiguienteDiaLaboral(obtenerFechaBogota(0));
+  const slots = obtenerSlotsDisponibles(fecha);
 
-Justo tenemos disponibilidad en *VIP CRC Galerías*.
+  if (slots.length === 0) {
+    return `Para ese día no tenemos horarios disponibles.
+
+Nuestro horario es:
+Lunes a viernes: 7:00 a.m. a 3:30 p.m.
+Sábados: 7:00 a.m. a 11:00 a.m.
+Domingos y festivos: no laboramos.`;
+  }
+
+  const opciones = slots
+    .map((slot, index) => `${index + 1}️⃣ ${slot.texto}`)
+    .join("\n");
+
+  return `Perfecto ✅
+
+Día seleccionado:
+📅 *${formatearFechaColombia(fecha)}*
 
 Elige un horario aproximado de llegada:
 
-1️⃣ 7:00 a.m. a 9:00 a.m.
-2️⃣ 9:00 a.m. a 11:00 a.m.
-3️⃣ 11:00 a.m. a 1:00 p.m.
-4️⃣ 1:00 p.m. a 3:00 p.m.
-5️⃣ 3:00 p.m. a 4:00 p.m.
-6️⃣ Otro horario
+${opciones}
+${slots.length + 1}️⃣ Otro horario
 
 Responde con el número de la opción.`;
 }
 
-function detectarHorario(msg) {
-  if (
-    msg === "1" ||
-    msg.includes("7") ||
-    msg.includes("8") ||
-    msg.includes("7 a 9") ||
-    msg.includes("7:00") ||
-    msg.includes("8:00")
-  ) {
-    return "7:00 a.m. a 9:00 a.m.";
+function detectarHorario(msg, fechaCita = null) {
+  const fecha = fechaCita ? new Date(fechaCita) : obtenerSiguienteDiaLaboral(obtenerFechaBogota(0));
+  const slots = obtenerSlotsDisponibles(fecha);
+
+  const numero = Number(msg);
+
+  if (Number.isInteger(numero) && numero >= 1 && numero <= slots.length) {
+    return slots[numero - 1].texto;
+  }
+
+  if (Number.isInteger(numero) && numero === slots.length + 1) {
+    return "Otro horario";
   }
 
   if (
-    msg === "2" ||
-    msg.includes("9") ||
-    msg.includes("10") ||
-    msg.includes("9 a 11") ||
-    msg.includes("9:00") ||
-    msg.includes("10:00")
-  ) {
-    return "9:00 a.m. a 11:00 a.m.";
-  }
-
-  if (
-    msg === "3" ||
-    msg.includes("11") ||
-    msg.includes("12") ||
-    msg.includes("11 a 1") ||
-    msg.includes("11:00") ||
-    msg.includes("12:00")
-  ) {
-    return "11:00 a.m. a 1:00 p.m.";
-  }
-
-  if (
-    msg === "4" ||
-    msg.includes("1") ||
-    msg.includes("2") ||
-    msg.includes("1 a 3") ||
-    msg.includes("13") ||
-    msg.includes("14")
-  ) {
-    return "1:00 p.m. a 3:00 p.m.";
-  }
-
-  if (
-    msg === "5" ||
-    msg.includes("3") ||
-    msg.includes("4") ||
-    msg.includes("3 a 4") ||
-    msg.includes("15") ||
-    msg.includes("16")
-  ) {
-    return "3:00 p.m. a 4:00 p.m.";
-  }
-
-  if (
-    msg === "6" ||
     msg.includes("otro") ||
     msg.includes("otra") ||
     msg.includes("diferente")
   ) {
     return "Otro horario";
+  }
+
+  for (const slot of slots) {
+    const inicioHora = Math.floor(slot.inicio / 60);
+    const finHora = Math.floor(slot.fin / 60);
+
+    if (msg.includes(String(inicioHora)) || msg.includes(String(finHora))) {
+      return slot.texto;
+    }
   }
 
   return null;
@@ -401,7 +628,7 @@ async function procesarMensaje(from, text) {
   console.log("Usuario:", from);
   console.log("➡️ Paso actual:", session.step);
 
-  if (isRateLimited(from)) {
+  if (isRateLimited(from, session.step)) {
     await responder(
       from,
       "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
@@ -995,12 +1222,13 @@ if (session.step === "DIA_CITA") {
     return;
   }
 
-  updateSession(from, {
-    diaCita: dia,
-    step: dia === "Otro día" ? "DIA_PERSONALIZADO" : "HORARIO_CITA",
-  });
+  if (dia.tipo === "otro") {
+    updateSession(from, {
+      diaCita: "Otro día",
+      fechaCitaISO: null,
+      step: "DIA_PERSONALIZADO",
+    });
 
-  if (dia === "Otro día") {
     await responder(
       from,
       `Perfecto ✅
@@ -1016,17 +1244,61 @@ Ejemplo:
     return;
   }
 
-  await responder(
-    from,
-    `Perfecto ✅
+  let fechaSeleccionada = dia.fecha;
 
-Día seleccionado:
-📅 *${dia}*
+  if (!esDiaLaboralCRC(fechaSeleccionada)) {
+    const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
 
-Ahora elige un horario aproximado de llegada.`
-  );
+    updateSession(from, {
+      diaCita: formatearFechaColombia(siguiente),
+      fechaCitaISO: fechaKey(siguiente),
+      step: "HORARIO_CITA",
+    });
 
-  await responder(from, menuHorariosCita());
+    await responder(
+      from,
+      `Ese día no tenemos atención porque es domingo o festivo.
+
+Te puedo ofrecer el siguiente día hábil:
+
+📅 *${formatearFechaColombia(siguiente)}*`
+    );
+
+    await responder(from, menuHorariosCita(siguiente));
+    return;
+  }
+
+  let slots = obtenerSlotsDisponibles(fechaSeleccionada);
+
+  if (slots.length === 0) {
+    const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
+
+    updateSession(from, {
+      diaCita: formatearFechaColombia(siguiente),
+      fechaCitaISO: fechaKey(siguiente),
+      step: "HORARIO_CITA",
+    });
+
+    await responder(
+      from,
+      `Para el día de hoy ya no tenemos disponibilidad.
+
+Te puedo ofrecer el siguiente día hábil:
+
+📅 *${formatearFechaColombia(siguiente)}*`
+    );
+
+    await responder(from, menuHorariosCita(siguiente));
+    return;
+  }
+
+  updateSession(from, {
+    diaCita: dia.texto,
+    fechaCitaISO: fechaKey(fechaSeleccionada),
+    step: "HORARIO_CITA",
+  });
+
+  await responder(from, menuHorariosCita(fechaSeleccionada));
   return;
 }
 
@@ -1043,6 +1315,7 @@ if (session.step === "DIA_PERSONALIZADO") {
 
   updateSession(from, {
     diaCita: diaPersonalizado,
+    fechaCitaISO: null,
     step: "HORARIO_CITA",
   });
 
@@ -1056,15 +1329,50 @@ Día solicitado:
 Ahora elige un horario aproximado de llegada.`
   );
 
-  await responder(from, menuHorariosCita());
+  await responder(
+    from,
+    `Horarios disponibles habituales:
+
+1️⃣ 7:00 a.m. a 9:00 a.m.
+2️⃣ 9:00 a.m. a 11:00 a.m.
+3️⃣ 11:00 a.m. a 1:00 p.m.
+4️⃣ 1:00 p.m. a 3:00 p.m.
+5️⃣ 3:00 p.m. a 3:30 p.m.
+6️⃣ Otro horario
+
+Recuerda:
+Lunes a viernes: 7:00 a.m. a 3:30 p.m.
+Sábados: 7:00 a.m. a 11:00 a.m.
+Domingos y festivos: no laboramos.`
+  );
   return;
 }
   
 if (session.step === "HORARIO_CITA") {
-  const horario = detectarHorario(msg);
+  const fechaCita = session.fechaCitaISO
+    ? new Date(`${session.fechaCitaISO}T12:00:00-05:00`)
+    : null;
+
+  const horario = session.fechaCitaISO
+    ? detectarHorario(msg, fechaCita)
+    : detectarHorario(msg, null);
 
   if (!horario) {
-    await responder(from, menuHorariosCita());
+    if (session.fechaCitaISO) {
+      await responder(from, menuHorariosCita(fechaCita));
+    } else {
+      await responder(
+        from,
+        `Por favor responde con una opción válida:
+
+1️⃣ 7:00 a.m. a 9:00 a.m.
+2️⃣ 9:00 a.m. a 11:00 a.m.
+3️⃣ 11:00 a.m. a 1:00 p.m.
+4️⃣ 1:00 p.m. a 3:00 p.m.
+5️⃣ 3:00 p.m. a 3:30 p.m.
+6️⃣ Otro horario`
+      );
+    }
     return;
   }
 
@@ -1081,9 +1389,9 @@ if (session.step === "HORARIO_CITA") {
 Indícanos el horario aproximado que prefieres.
 
 Ejemplo:
-*Mañana a las 10 a.m.*
-*Viernes en la tarde*
-*Hoy después de las 2 p.m.*`
+*10:00 a.m.*
+*Después de las 2:00 p.m.*
+*En la mañana*`
     );
 
     updateSession(from, {
@@ -1096,6 +1404,9 @@ Ejemplo:
   await responder(
     from,
     `Perfecto ✅
+
+Día seleccionado:
+📅 *${session.diaCita || "Día por confirmar"}*
 
 Horario seleccionado:
 ⏰ *${horario}*
@@ -1268,13 +1579,15 @@ if (session.step === "CONFIRMAR_CITA") {
     msg.includes("cambiar")
   ) {
     updateSession(from, {
-      step: "HORARIO_CITA",
-      horarioCita: null,
-      nombreCita: null,
-      cedulaCita: null,
-      telefonoCita: null,
-      correoCita: null,
-    });
+  step: "DIA_CITA",
+  diaCita: null,
+  fechaCitaISO: null,
+  horarioCita: null,
+  nombreCita: null,
+  cedulaCita: null,
+  telefonoCita: null,
+  correoCita: null,
+});
 
     await responder(
       from,
@@ -1283,7 +1596,7 @@ if (session.step === "CONFIRMAR_CITA") {
 Vamos a tomar los datos nuevamente.`
     );
 
-    await responder(from, menuHorariosCita());
+    await responder(from, menuDiasCita());
     return;
   }
 
