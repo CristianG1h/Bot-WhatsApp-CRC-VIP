@@ -495,11 +495,7 @@ async function logIncomingMessage(rawPhone, content, extra = {}) {
 
   /*
     En bandejas Twilio/WhatsApp de Chatwoot, la API no permite crear
-    mensajes "incoming". Eso solo funciona en bandejas tipo API.
-
-    Como este bot recibe primero por Render y no directamente por Chatwoot,
-    guardamos el mensaje del cliente como nota privada para que el asesor
-    vea toda la trazabilidad.
+    mensajes incoming públicos. Por eso se guarda como nota privada.
   */
   return addPrivateNote(
     rawPhone,
@@ -511,7 +507,25 @@ ${text}`,
 }
 
 async function logOutgoingMessage(rawPhone, content, extra = {}) {
-  return createMessage(rawPhone, content, "outgoing", extra);
+  const text = String(content || "").trim();
+
+  if (!text) return null;
+
+  /*
+    IMPORTANTE:
+    En bandejas Twilio/WhatsApp de Chatwoot, un mensaje outgoing público
+    se envía realmente al WhatsApp del cliente.
+
+    Como Render ya envía el mensaje por Twilio, aquí lo guardamos solo como
+    nota privada para evitar mensajes duplicados.
+  */
+  return addPrivateNote(
+    rawPhone,
+    `🤖 *Respuesta del bot:*
+
+${text}`,
+    extra
+  );
 }
 
 async function addPrivateNote(rawPhone, content, extra = {}) {
