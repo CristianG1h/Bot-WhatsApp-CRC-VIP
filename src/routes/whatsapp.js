@@ -20,6 +20,11 @@ const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
 const { enviarCorreoCita } = require("../services/email");
+const {
+  logIncomingMessage,
+  logOutgoingMessage,
+  markNeedsAgent,
+} = require("../services/chatwoot");
 
 async function responder(to, body) {
   const texto = String(body || "");
@@ -32,10 +37,14 @@ async function responder(to, body) {
       await esperar(700);
     }
 
+    await logOutgoingMessage(to, texto);
     return;
   }
 
-  return sendText(to, texto);
+  const resultado = await sendText(to, texto);
+
+  await logOutgoingMessage(to, texto);
+  return resultado;
 }
 
 function dividirMensaje(texto, max = 1300) {
@@ -589,6 +598,37 @@ function esTelefonoValido(telefono) {
   return limpio.length >= 7 && limpio.length <= 13;
 }
 
+function esSolicitudAsesor(msg) {
+  return (
+    msg.includes("asesor") ||
+    msg.includes("agente") ||
+    msg.includes("humano") ||
+    msg.includes("persona") ||
+    msg.includes("hablar con alguien") ||
+    msg.includes("quiero hablar") ||
+    msg.includes("atencion humana") ||
+    msg.includes("atención humana")
+  );
+}
+
+async function transferirAAsesor(from, motivo = "Usuario solicitó hablar con asesor") {
+  updateSession(from, {
+    step: "HUMANO",
+    necesitaAsesor: true,
+  });
+
+  await markNeedsAgent(from, motivo);
+
+  await responder(
+    from,
+    `Perfecto ✅
+
+Un asesor continuará con tu atención por este mismo chat.
+
+Por favor déjanos tu consulta y en cuanto un asesor esté disponible te responderá.`
+  );
+}
+
 function resumenCita(datos) {
   return `✅ *Cita preconfirmada - VIP CRC Galerías*
 
@@ -661,6 +701,12 @@ async function procesarMensaje(from, text) {
   console.log("Mensaje recibido:", text);
   console.log("Usuario:", from);
   console.log("➡️ Paso actual:", session.step);
+  
+  await logIncomingMessage(from, text, {
+  custom_attributes: {
+    paso_actual: session.step,
+  },
+});
 
   if (isRateLimited(from, session.step)) {
     await responder(
@@ -676,6 +722,16 @@ async function procesarMensaje(from, text) {
     await responder(from, menuInicial());
     return;
   }
+
+  if (esSolicitudAsesor(msg)) {
+  await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
+  return;
+}
+
+if (session.step === "HUMANO") {
+  await markNeedsAgent(from, "Usuario respondió después de ser transferido a asesor");
+  return;
+}
 
   if (session.step === "MENU_INICIAL") {
     if (msg === "1" || msg.includes("crc")) {
@@ -778,23 +834,14 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
   if (session.step === "CIA_FINAL") {
     if (
-      msg === "1" ||
-      msg.includes("asesor") ||
-      msg.includes("si") ||
-      msg.includes("sí")
-    ) {
-      resetSession(from);
-      await responder(
-        from,
-        `Perfecto ✅ Un asesor de *CIA VIP* continuará con tu atención.
-
-Por favor déjanos:
-Nombre completo
-Ciudad
-Consulta que deseas realizar`
-      );
-      return;
-    }
+  msg === "1" ||
+  msg.includes("asesor") ||
+  msg.includes("si") ||
+  msg.includes("sí")
+) {
+  await transferirAAsesor(from, "Usuario solicitó asesor desde flujo CIA / SIMIT");
+  return;
+}
 
     if (msg === "2" || msg.includes("volver") || msg.includes("menu")) {
       resetSession(from);
@@ -831,13 +878,9 @@ Consulta que deseas realizar`
     }
 
     if (msg === "3" || msg.includes("asesor")) {
-      resetSession(from);
-      await responder(
-        from,
-        "Perfecto ✅ Un asesor de *VIP CRC Galerías* continuará con tu atención.\nPor favor déjanos tu nombre completo y el trámite que deseas realizar."
-      );
-      return;
-    }
+  await transferirAAsesor(from, "Usuario eligió hablar con asesor desde menú principal CRC");
+  return;
+}
 
     await responder(from, menuPrincipal());
     return;
@@ -1115,31 +1158,17 @@ Recuerda que si tienes comparendos o multas pendientes, el trámite final de la 
 
   if (session.step === "SIMIT_DECISION_CRC") {
     if (
-      msg === "1" ||
-      msg.includes("asesor") ||
-      msg.includes("comparendo") ||
-      msg.includes("comparendos") ||
-      msg.includes("multa") ||
-      msg.includes("simit") ||
-      msg.includes("ayuda")
-    ) {
-      await responder(
-        from,
-        `Perfecto ✅
-
-Un asesor continuará con tu caso de comparendos.
-
-Por favor déjanos estos datos:
-
-👤 Nombre completo
-🪪 Número de cédula
-🏙️ Ciudad
-📌 Consulta que deseas realizar`
-      );
-
-      resetSession(from);
-      return;
-    }
+  msg === "1" ||
+  msg.includes("asesor") ||
+  msg.includes("comparendo") ||
+  msg.includes("comparendos") ||
+  msg.includes("multa") ||
+  msg.includes("simit") ||
+  msg.includes("ayuda")
+) {
+  await transferirAAsesor(from, "Usuario solicitó asesor por comparendos / SIMIT desde flujo CRC");
+  return;
+}
 
     if (
       msg === "2" ||
