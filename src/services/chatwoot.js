@@ -53,11 +53,17 @@ async function chatwootRequest(path, options = {}) {
 
   const response = await fetch(`${baseUrl}${path}`, {
     method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      api_access_token: apiToken,
-      ...(options.headers || {}),
-    },
+headers: {
+  "Content-Type": "application/json",
+
+  // Header oficial usado por Chatwoot
+  api_access_token: apiToken,
+
+  // Alternativa para instalaciones self-hosted detrás de Nginx
+  "api-access-token": apiToken,
+
+  ...(options.headers || {}),
+},
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
