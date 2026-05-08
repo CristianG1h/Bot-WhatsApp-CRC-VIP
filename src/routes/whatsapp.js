@@ -765,7 +765,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-rrouter.post("/chatwoot", async (req, res) => {
+router.post("/chatwoot", async (req, res) => {
   res.status(200).send("OK");
 
   try {
