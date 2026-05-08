@@ -23,7 +23,7 @@ function getConfig() {
     baseUrl,
     accountId,
     inboxId: Number(inboxId),
-    apiToken,
+    apiToken: String(apiToken).trim(),
   };
 }
 
@@ -48,22 +48,27 @@ function defaultName(rawPhone) {
   return `WhatsApp ${cleanPhone(rawPhone)}`;
 }
 
+function cacheKey(rawPhone) {
+  const { inboxId } = getConfig();
+  return `${inboxId}:${identifierFromPhone(rawPhone)}`;
+}
+
 async function chatwootRequest(path, options = {}) {
   const { baseUrl, apiToken } = getConfig();
 
   const response = await fetch(`${baseUrl}${path}`, {
     method: options.method || "GET",
-headers: {
-  "Content-Type": "application/json",
+    headers: {
+      "Content-Type": "application/json",
 
-  // Header oficial usado por Chatwoot
-  api_access_token: apiToken,
+      // Header oficial de Chatwoot
+      api_access_token: apiToken,
 
-  // Alternativa para instalaciones self-hosted detrás de Nginx
-  "api-access-token": apiToken,
+      // Header alternativo por si Nginx bloquea headers con "_"
+      "api-access-token": apiToken,
 
-  ...(options.headers || {}),
-},
+      ...(options.headers || {}),
+    },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
@@ -77,9 +82,14 @@ headers: {
   }
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       `Chatwoot API ${response.status}: ${JSON.stringify(data)}`
     );
+
+    error.status = response.status;
+    error.data = data;
+
+    throw error;
   }
 
   return data;
@@ -105,6 +115,77 @@ function extractConversationId(response) {
   );
 }
 
+function getArrayPayload(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.payload)) return response.payload;
+  if (Array.isArray(response?.data)) return response.data;
+  return [];
+}
+
+function getConversationInboxId(conversation) {
+  return (
+    conversation?.inbox_id ||
+    conversation?.inbox?.id ||
+    conversation?.meta?.inbox?.id ||
+    conversation?.additional_attributes?.inbox_id ||
+    null
+  );
+}
+
+async function searchContactByPhone(rawPhone) {
+  const { accountId } = getConfig();
+
+  const phone = cleanPhone(rawPhone);
+  const identifier = identifierFromPhone(rawPhone);
+
+  const queries = [
+    phone,
+    identifier,
+    phone.replace("+", ""),
+  ];
+
+  for (const query of queries) {
+    try {
+      const response = await chatwootRequest(
+        `/api/v1/accounts/${accountId}/contacts/search?q=${encodeURIComponent(
+          query
+        )}`
+      );
+
+      const results = getArrayPayload(response);
+
+      const found = results.find((item) => {
+        const contact = item?.contact || item;
+
+        const contactPhone = String(contact?.phone_number || "").replace(
+          /\s+/g,
+          ""
+        );
+
+        const contactIdentifier = String(contact?.identifier || "");
+
+        return (
+          contactPhone === phone ||
+          contactPhone === phone.replace("+", "") ||
+          contactIdentifier === identifier
+        );
+      });
+
+      if (found) {
+        const contact = found?.contact || found;
+
+        if (contact?.id) {
+          return contact.id;
+        }
+      }
+    } catch (error) {
+      console.error("⚠️ Error buscando contacto en Chatwoot:", error.message);
+    }
+  }
+
+  return null;
+}
+
 async function createContact(rawPhone, extra = {}) {
   const { accountId, inboxId } = getConfig();
 
@@ -119,11 +200,13 @@ async function createContact(rawPhone, extra = {}) {
     additional_attributes: {
       source: "twilio_whatsapp_render_bot",
       wa_id: identifier,
+      inbox_id: inboxId,
       ...(extra.additional_attributes || {}),
     },
     custom_attributes: {
       canal: "WhatsApp",
       origen: "Bot CRC Render",
+      inbox_id: inboxId,
       ...(extra.custom_attributes || {}),
     },
   };
@@ -140,7 +223,9 @@ async function createContact(rawPhone, extra = {}) {
 
   if (!contactId) {
     throw new Error(
-      `No se pudo obtener contact_id desde Chatwoot: ${JSON.stringify(response)}`
+      `No se pudo obtener contact_id desde Chatwoot: ${JSON.stringify(
+        response
+      )}`
     );
   }
 
@@ -148,29 +233,113 @@ async function createContact(rawPhone, extra = {}) {
 }
 
 async function getOrCreateContact(rawPhone, extra = {}) {
-  const identifier = identifierFromPhone(rawPhone);
+  const key = cacheKey(rawPhone);
 
-  if (contactCache.has(identifier)) {
-    return contactCache.get(identifier);
+  if (contactCache.has(key)) {
+    return contactCache.get(key);
   }
 
+  // 1. Primero buscar si el contacto ya existe.
+  // Esto es importante porque Chatwoot no permite duplicar teléfono
+  // dentro de la misma cuenta, aunque tengas varios inbox.
+  const existingContactId = await searchContactByPhone(rawPhone);
+
+  if (existingContactId) {
+    contactCache.set(key, existingContactId);
+    return existingContactId;
+  }
+
+  // 2. Si no existe, crearlo.
   try {
     const contactId = await createContact(rawPhone, extra);
-    contactCache.set(identifier, contactId);
+    contactCache.set(key, contactId);
     return contactId;
   } catch (error) {
     console.error("⚠️ Error creando contacto en Chatwoot:", error.message);
 
-    /*
-      Si el contacto ya existe, Chatwoot puede responder error por duplicado.
-      Para no romper el bot, intentamos reutilizar desde cache si existe.
-      Si no existe en cache, lanzamos el error.
-    */
-    if (contactCache.has(identifier)) {
-      return contactCache.get(identifier);
+    // 3. Si falló porque el teléfono ya existía, buscamos otra vez.
+    if (
+      error.status === 422 ||
+      String(error.message || "").includes("Phone number has already been taken")
+    ) {
+      const contactId = await searchContactByPhone(rawPhone);
+
+      if (contactId) {
+        contactCache.set(key, contactId);
+        return contactId;
+      }
     }
 
     throw error;
+  }
+}
+
+async function searchConversationBySource(rawPhone) {
+  const { accountId, inboxId } = getConfig();
+  const sourceId = `whatsapp:${cleanPhone(rawPhone)}`;
+
+  try {
+    const response = await chatwootRequest(
+      `/api/v1/accounts/${accountId}/conversations?inbox_id=${inboxId}&status=open`
+    );
+
+    const conversations = getArrayPayload(response);
+
+    const found = conversations.find((conversation) => {
+      const conversationInboxId = getConversationInboxId(conversation);
+      const conversationSourceId =
+        conversation?.source_id ||
+        conversation?.contact_inbox?.source_id ||
+        conversation?.meta?.sender?.source_id ||
+        "";
+
+      return (
+        Number(conversationInboxId) === Number(inboxId) &&
+        String(conversationSourceId) === sourceId
+      );
+    });
+
+    return found?.id || null;
+  } catch (error) {
+    console.error(
+      "⚠️ Error buscando conversación por source_id en Chatwoot:",
+      error.message
+    );
+    return null;
+  }
+}
+
+async function searchOpenConversation(rawPhone, contactId) {
+  const { accountId, inboxId } = getConfig();
+
+  try {
+    const response = await chatwootRequest(
+      `/api/v1/accounts/${accountId}/contacts/${contactId}/conversations`
+    );
+
+    const conversations = getArrayPayload(response);
+
+    if (!conversations.length) return null;
+
+    // MUY IMPORTANTE:
+    // Solo se usan conversaciones del inbox configurado.
+    // Así evitamos mezclar CRC con Curso de Alimentos u otros canales.
+    const conversationsFromThisInbox = conversations.filter((conversation) => {
+      const conversationInboxId = getConversationInboxId(conversation);
+      return Number(conversationInboxId) === Number(inboxId);
+    });
+
+    if (!conversationsFromThisInbox.length) return null;
+
+    const openConversation =
+      conversationsFromThisInbox.find(
+        (conversation) => conversation.status === "open"
+      ) || conversationsFromThisInbox[0];
+
+    return openConversation?.id || null;
+  } catch (error) {
+    console.error("⚠️ Error buscando conversación en Chatwoot:", error.message);
+    return null;
   }
 }
 
@@ -178,23 +347,27 @@ async function createConversation(rawPhone, contactId) {
   const { accountId, inboxId } = getConfig();
   const sourceId = `whatsapp:${cleanPhone(rawPhone)}`;
 
+  const body = {
+    source_id: sourceId,
+    inbox_id: inboxId,
+    contact_id: contactId,
+    status: "open",
+    additional_attributes: {
+      source: "twilio_whatsapp_render_bot",
+      inbox_id: inboxId,
+    },
+    custom_attributes: {
+      canal: "WhatsApp",
+      origen: "Bot CRC Render",
+      inbox_id: inboxId,
+    },
+  };
+
   const response = await chatwootRequest(
     `/api/v1/accounts/${accountId}/conversations`,
     {
       method: "POST",
-      body: {
-        source_id: sourceId,
-        inbox_id: inboxId,
-        contact_id: contactId,
-        status: "open",
-        additional_attributes: {
-          source: "twilio_whatsapp_render_bot",
-        },
-        custom_attributes: {
-          canal: "WhatsApp",
-          origen: "Bot CRC Render",
-        },
-      },
+      body,
     }
   );
 
@@ -202,7 +375,9 @@ async function createConversation(rawPhone, contactId) {
 
   if (!conversationId) {
     throw new Error(
-      `No se pudo obtener conversation_id desde Chatwoot: ${JSON.stringify(response)}`
+      `No se pudo obtener conversation_id desde Chatwoot: ${JSON.stringify(
+        response
+      )}`
     );
   }
 
@@ -210,21 +385,64 @@ async function createConversation(rawPhone, contactId) {
 }
 
 async function getOrCreateConversation(rawPhone, extra = {}) {
-  const identifier = identifierFromPhone(rawPhone);
+  const key = cacheKey(rawPhone);
 
-  if (conversationCache.has(identifier)) {
-    return conversationCache.get(identifier);
+  if (conversationCache.has(key)) {
+    return conversationCache.get(key);
   }
 
   const contactId = await getOrCreateContact(rawPhone, extra);
-  const conversationId = await createConversation(rawPhone, contactId);
 
-  conversationCache.set(identifier, conversationId);
+  // 1. Buscar conversación abierta del contacto,
+  // pero SOLO dentro del inbox correcto.
+  const existingConversationId = await searchOpenConversation(
+    rawPhone,
+    contactId
+  );
 
-  return conversationId;
+  if (existingConversationId) {
+    conversationCache.set(key, existingConversationId);
+    return existingConversationId;
+  }
+
+  // 2. Intentar buscar por source_id dentro del inbox.
+  const sourceConversationId = await searchConversationBySource(rawPhone);
+
+  if (sourceConversationId) {
+    conversationCache.set(key, sourceConversationId);
+    return sourceConversationId;
+  }
+
+  // 3. Si no hay conversación para este inbox, crear una nueva.
+  try {
+    const conversationId = await createConversation(rawPhone, contactId);
+    conversationCache.set(key, conversationId);
+    return conversationId;
+  } catch (error) {
+    console.error("⚠️ Error creando conversación en Chatwoot:", error.message);
+
+    // Si Chatwoot responde duplicado o conflicto, intentamos buscar de nuevo.
+    if (error.status === 422 || error.status === 409) {
+      const retryConversationId =
+        (await searchOpenConversation(rawPhone, contactId)) ||
+        (await searchConversationBySource(rawPhone));
+
+      if (retryConversationId) {
+        conversationCache.set(key, retryConversationId);
+        return retryConversationId;
+      }
+    }
+
+    throw error;
+  }
 }
 
-async function createMessage(rawPhone, content, messageType = "incoming", extra = {}) {
+async function createMessage(
+  rawPhone,
+  content,
+  messageType = "incoming",
+  extra = {}
+) {
   if (!chatwootEnabled()) return null;
 
   const text = String(content || "").trim();
@@ -296,19 +514,24 @@ async function addPrivateNote(rawPhone, content, extra = {}) {
   }
 }
 
-async function markNeedsAgent(rawPhone, reason = "Usuario solicitó hablar con asesor") {
+async function markNeedsAgent(
+  rawPhone,
+  reason = "Usuario solicitó hablar con asesor"
+) {
   await addPrivateNote(
     rawPhone,
-    `🔔 *Transferencia a asesor*\n\nMotivo: ${reason}`
+    `🔔 *Transferencia a asesor*
+
+Motivo: ${reason}`
   );
 
   return true;
 }
 
 function clearChatwootCache(rawPhone) {
-  const identifier = identifierFromPhone(rawPhone);
-  contactCache.delete(identifier);
-  conversationCache.delete(identifier);
+  const key = cacheKey(rawPhone);
+  contactCache.delete(key);
+  conversationCache.delete(key);
 }
 
 module.exports = {
