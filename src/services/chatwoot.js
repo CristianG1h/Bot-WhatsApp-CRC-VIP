@@ -468,14 +468,46 @@ async function createMessage(
     );
 
     return response;
-  } catch (error) {
+    } catch (error) {
     console.error("⚠️ Error guardando mensaje en Chatwoot:", error.message);
+
+    if (
+      messageType === "incoming" &&
+      String(error.message || "").includes("Incoming messages are only allowed")
+    ) {
+      return addPrivateNote(
+        rawPhone,
+        `📥 *Mensaje del cliente:*
+
+${text}`,
+        extra
+      );
+    }
+
     return null;
   }
 }
 
 async function logIncomingMessage(rawPhone, content, extra = {}) {
-  return createMessage(rawPhone, content, "incoming", extra);
+  const text = String(content || "").trim();
+
+  if (!text) return null;
+
+  /*
+    En bandejas Twilio/WhatsApp de Chatwoot, la API no permite crear
+    mensajes "incoming". Eso solo funciona en bandejas tipo API.
+
+    Como este bot recibe primero por Render y no directamente por Chatwoot,
+    guardamos el mensaje del cliente como nota privada para que el asesor
+    vea toda la trazabilidad.
+  */
+  return addPrivateNote(
+    rawPhone,
+    `📥 *Mensaje del cliente:*
+
+${text}`,
+    extra
+  );
 }
 
 async function logOutgoingMessage(rawPhone, content, extra = {}) {
