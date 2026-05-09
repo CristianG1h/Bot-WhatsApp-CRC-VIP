@@ -780,10 +780,54 @@ router.post("/chatwoot", async (req, res) => {
       payload.private === true ||
       payload.message?.private === true;
 
+    // Solo procesamos mensajes creados
     if (event && event !== "message_created") return;
+
+    // Solo procesamos mensajes entrantes reales del cliente
     if (messageType !== "incoming") return;
+
+    // Ignoramos notas privadas
     if (isPrivate) return;
+
+    // Ignoramos mensajes vacíos
     if (!content || !String(content).trim()) return;
+
+    // ─────────────────────────────────────────────
+    // FILTRO IMPORTANTE POR INBOX
+    // Este bot CRC solo debe procesar mensajes del inbox configurado.
+    // Evita que mensajes del bot de Curso de Alimentos entren al bot CRC.
+    // ─────────────────────────────────────────────
+    const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
+
+    const payloadInboxId =
+      payload.inbox?.id ||
+      payload.inbox_id ||
+      payload.conversation?.inbox_id ||
+      payload.conversation?.inbox?.id ||
+      payload.message?.inbox_id ||
+      payload.message?.inbox?.id ||
+      payload.conversation?.meta?.inbox?.id ||
+      payload.conversation?.contact_inbox?.inbox_id ||
+      payload.contact_inbox?.inbox_id ||
+      null;
+
+    if (
+      expectedInboxId &&
+      payloadInboxId &&
+      Number(payloadInboxId) !== expectedInboxId
+    ) {
+      console.log(
+        `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
+      );
+      return;
+    }
+
+    if (expectedInboxId && !payloadInboxId) {
+      console.log(
+        "⚠️ Webhook Chatwoot sin inbox_id claro. Payload ignorado para evitar mezclar canales."
+      );
+      return;
+    }
 
     const sender =
       payload.sender ||
@@ -819,6 +863,7 @@ router.post("/chatwoot", async (req, res) => {
 
     console.log("📩 Mensaje recibido desde Chatwoot:", text);
     console.log("Usuario:", from);
+    console.log("Inbox Chatwoot:", payloadInboxId);
 
     await procesarMensaje(from, text, {
       source: "chatwoot",
