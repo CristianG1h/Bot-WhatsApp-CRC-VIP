@@ -813,10 +813,6 @@ router.post("/chatwoot", async (req, res) => {
   try {
     const payload = req.body || {};
 
-    // aquí sigue tu código actual de Chatwoot
-  try {
-    const payload = req.body || {};
-
     const event = payload.event;
     const messageType = payload.message_type || payload.message?.message_type;
     const content = payload.content || payload.message?.content || "";
