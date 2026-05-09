@@ -788,8 +788,12 @@ router.post("/twilio", async (req, res) => {
 });
 
 router.post("/chatwoot", async (req, res) => {
-  // tu código actual de Chatwoot
-});
+  res.status(200).send("OK");
+
+  try {
+    const payload = req.body || {};
+
+    // aquí sigue tu código actual de Chatwoot
   try {
     const payload = req.body || {};
 
