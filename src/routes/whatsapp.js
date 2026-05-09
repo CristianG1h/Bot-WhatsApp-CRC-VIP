@@ -786,6 +786,26 @@ router.post("/twilio", async (req, res) => {
     console.error("❌ Error webhook Twilio:", error.message);
   }
 });
+router.post("/twilio", async (req, res) => {
+  res.status(200).send("OK");
+
+  try {
+    const from = req.body.From;
+    const text = limpiarTexto(req.body.Body);
+
+    if (!from || !text) return;
+
+    console.log("📩 Mensaje recibido desde Twilio Fallback:", text);
+    console.log("Usuario:", from);
+
+    await procesarMensaje(from, text, {
+      source: "twilio",
+      skipChatwootIncomingLog: false,
+    });
+  } catch (error) {
+    console.error("❌ Error webhook Twilio:", error.message);
+  }
+});
 
 router.post("/chatwoot", async (req, res) => {
   res.status(200).send("OK");
