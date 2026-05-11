@@ -819,15 +819,23 @@ async function transferirAAsesor(
     step: "HUMANO",
     necesitaAsesor: true,
     asesorDisponible,
+
+    // IMPORTANTE:
+    // Desde que el usuario pide asesor, pausamos el bot.
+    // Si pasan 10 minutos sin atención, el bot se reactiva.
+    botPausadoPorAsesor: true,
+    asesorActivo: asesorDisponible,
+    asesorLastAt: Date.now(),
+    avisoReactivacionBotEnviado: false,
   });
 
   console.log(
-  "🔔 Transferencia a asesor:",
-  from,
-  asesorDisponible
-    ? `${motivo} - Dentro del horario de asesor`
-    : `${motivo} - Fuera del horario de asesor`
-);
+    "🔔 Transferencia a asesor:",
+    from,
+    asesorDisponible
+      ? `${motivo} - Dentro del horario de asesor`
+      : `${motivo} - Fuera del horario de asesor`
+  );
 
   if (asesorDisponible) {
     await responder(
@@ -855,7 +863,6 @@ Déjanos por favor tu consulta en este chat y un asesor te responderá en el pr�
 También puedes escribir *menu* si deseas volver al asistente automático.`
   );
 }
-
 function resumenCita(datos) {
   return `✅ *Cita preconfirmada - VIP CRC Galerías*
 
@@ -1128,46 +1135,46 @@ async function procesarMensaje(from, text, options = {}) {
   // Si el usuario está con asesor, el bot NO debe responder automático.
   // Solo se reinicia si escribe explícitamente menu, menú, inicio o volver.
   if (session.step === "HUMANO") {
-    if (["menu", "menú", "inicio", "volver"].includes(msg)) {
-      resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-      await responder(from, menuPrincipal());
-      return;
-    }
-
-    const asesorDisponible = esHorarioAsesorDisponible();
-
+  // Si el usuario pide volver al bot, se reactiva inmediatamente.
+  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
     updateSession(from, {
-      asesorDisponible,
+      step: "MENU_PRINCIPAL",
+      linea: "CRC",
+      necesitaAsesor: false,
+      asesorActivo: false,
+      botPausadoPorAsesor: false,
+      asesorLastAt: null,
+      avisoReactivacionBotEnviado: false,
     });
 
-    console.log(
-      "🔔 Usuario en modo asesor:",
-      from,
-      asesorDisponible
-        ? "Usuario respondió en modo asesor dentro del horario disponible"
-        : "Usuario respondió en modo asesor fuera del horario disponible"
-    );
-
-    if (!asesorDisponible && !session.avisoFueraHorarioEnviado) {
-      updateSession(from, {
-        avisoFueraHorarioEnviado: true,
-      });
-
-      await responder(
-        from,
-        `Gracias ✅
-
-Tu mensaje quedó registrado para el asesor.
-
-${textoHorarioAsesor()}
-
-Un asesor te responderá en el próximo horario disponible.`
-      );
-    }
-
+    await responder(from, menuPrincipal());
     return;
   }
+
+  // Si ya pasaron los 10 minutos, reactivamos el bot.
+  if (session.botPausadoPorAsesor && !asesorSigueActivo(session)) {
+    await reactivarBotPorInactividad(from, session);
+    return;
+  }
+
+  const asesorDisponible = esHorarioAsesorDisponible();
+
+  updateSession(from, {
+    asesorDisponible,
+  });
+
+  console.log(
+    "🔔 Usuario en modo asesor:",
+    from,
+    asesorDisponible
+      ? "Usuario respondió en modo asesor dentro del horario disponible"
+      : "Usuario respondió en modo asesor fuera del horario disponible"
+  );
+
+  // Si sigue dentro de los 10 minutos, el bot no responde.
+  return;
+}
 
   // Si el usuario pide asesor en cualquier momento
 if (esSolicitudAsesor(msg)) {
