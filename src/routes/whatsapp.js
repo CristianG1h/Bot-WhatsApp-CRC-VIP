@@ -15,7 +15,12 @@ const {
   formatearResultadoSimitWhatsApp,
 } = require("../services/simit");
 
-const { getSession, updateSession, resetSession } = require("../utils/sessions");
+const {
+  getSession,
+  updateSession,
+  resetSession,
+  getAllSessions,
+} = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { getMessage } = require("../utils/messages");
@@ -25,6 +30,80 @@ const {
   logOutgoingMessage,
   markNeedsAgent,
 } = require("../services/chatwoot");
+
+const ASESOR_TIMEOUT_MS = 10 * 60 * 1000;
+let asesorCheckerIniciado = false;
+
+function marcarAsesorActivo(from) {
+  updateSession(from, {
+    step: "HUMANO",
+    necesitaAsesor: true,
+    asesorActivo: true,
+    botPausadoPorAsesor: true,
+    asesorLastAt: Date.now(),
+    avisoReactivacionBotEnviado: false,
+  });
+
+  console.log("👤 Asesor tomó la conversación:", from);
+}
+
+function asesorSigueActivo(session) {
+  if (!session?.botPausadoPorAsesor) return false;
+  if (!session?.asesorLastAt) return false;
+
+  return Date.now() - Number(session.asesorLastAt) < ASESOR_TIMEOUT_MS;
+}
+
+async function reactivarBotPorInactividad(from, session) {
+  if (!session?.botPausadoPorAsesor) return;
+  if (asesorSigueActivo(session)) return;
+  if (session.avisoReactivacionBotEnviado) return;
+
+  updateSession(from, {
+    step: "MENU_PRINCIPAL",
+    linea: "CRC",
+    necesitaAsesor: false,
+    asesorActivo: false,
+    botPausadoPorAsesor: false,
+    avisoReactivacionBotEnviado: true,
+  });
+
+  await responder(
+    from,
+    `Hola 👋
+
+Como no hemos tenido actividad reciente del asesor, el asistente automático queda activo nuevamente para ayudarte.
+
+${menuPrincipal()}`
+  );
+
+  console.log("🤖 Bot reactivado por inactividad del asesor:", from);
+}
+
+function iniciarVerificadorAsesor() {
+  if (asesorCheckerIniciado) return;
+  asesorCheckerIniciado = true;
+
+  setInterval(async () => {
+    try {
+      if (typeof getAllSessions !== "function") return;
+
+      const sesiones = getAllSessions();
+
+      for (const [from, session] of sesiones) {
+        if (!session?.botPausadoPorAsesor) continue;
+
+        await reactivarBotPorInactividad(from, session);
+      }
+    } catch (error) {
+      console.error("❌ Error verificando inactividad de asesor:", error.message);
+    }
+  }, 60 * 1000);
+
+  console.log("⏱️ Verificador de asesor iniciado");
+}
+
+iniciarVerificadorAsesor();
 
 const processedIncomingMessages = new Map();
 
@@ -863,8 +942,45 @@ router.post("/chatwoot", async (req, res) => {
     // Solo procesamos mensajes creados
     if (event && event !== "message_created") return;
 
-    // Solo procesamos mensajes entrantes reales del cliente
-    if (messageType !== "incoming") return;
+    // Si el mensaje es outgoing y NO es privado, significa que un asesor respondió desde Chatwoot.
+// En ese caso pausamos el bot para que no interrumpa la atención humana.
+if (messageType === "outgoing") {
+  const sender =
+    payload.sender ||
+    payload.message?.sender ||
+    payload.conversation?.contact ||
+    payload.contact ||
+    {};
+
+  const contact =
+    payload.conversation?.contact ||
+    payload.contact ||
+    sender ||
+    {};
+
+  const phone =
+    contact.phone_number ||
+    sender.phone_number ||
+    payload.conversation?.meta?.sender?.phone_number ||
+    payload.conversation?.contact_inbox?.source_id ||
+    payload.contact_inbox?.source_id ||
+    "";
+
+  if (!phone) {
+    console.log("⚠️ Mensaje outgoing de Chatwoot sin teléfono");
+    return;
+  }
+
+  const from = phone.startsWith("whatsapp:")
+    ? phone
+    : `whatsapp:${phone.startsWith("+") ? phone : `+${phone}`}`;
+
+  marcarAsesorActivo(from);
+  return;
+}
+
+// Solo procesamos mensajes entrantes reales del cliente
+if (messageType !== "incoming") return;
 
     // Ignoramos notas privadas
     if (isPrivate) return;
@@ -971,6 +1087,22 @@ async function procesarMensaje(from, text, options = {}) {
   console.log("Usuario:", from);
   console.log("Fuente:", options.source || "direct");
   console.log("➡️ Paso actual:", session.step);
+  if (session.botPausadoPorAsesor) {
+  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
+    return;
+  }
+
+  if (asesorSigueActivo(session)) {
+    console.log("👤 Bot pausado porque el asesor está activo:", from);
+    return;
+  }
+
+  await reactivarBotPorInactividad(from, session);
+  return;
+}
 
   if (isRateLimited(from, session.step)) {
     await responder(
