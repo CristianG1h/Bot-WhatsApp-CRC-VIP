@@ -65,6 +65,7 @@ async function reactivarBotPorInactividad(from, session) {
     necesitaAsesor: false,
     asesorActivo: false,
     botPausadoPorAsesor: false,
+    asesorLastAt: null,
     avisoReactivacionBotEnviado: true,
   });
 
@@ -91,10 +92,11 @@ function iniciarVerificadorAsesor() {
       const sesiones = getAllSessions();
 
       for (const [from, session] of sesiones) {
-        if (!session?.botPausadoPorAsesor) continue;
+  if (!session?.botPausadoPorAsesor) continue;
+  if (session?.avisoReactivacionBotEnviado) continue;
 
-        await reactivarBotPorInactividad(from, session);
-      }
+  await reactivarBotPorInactividad(from, session);
+}
     } catch (error) {
       console.error("❌ Error verificando inactividad de asesor:", error.message);
     }
@@ -939,28 +941,40 @@ router.post("/chatwoot", async (req, res) => {
       payload.private === true ||
       payload.message?.private === true;
 
+    // Ignoramos notas privadas.
+// Esto evita que las notas del bot en Chatwoot sean tomadas como mensajes del asesor.
+if (isPrivate) return;
+
     // Solo procesamos mensajes creados
     if (event && event !== "message_created") return;
 
     // Si el mensaje es outgoing y NO es privado, significa que un asesor respondió desde Chatwoot.
 // En ese caso pausamos el bot para que no interrumpa la atención humana.
 if (messageType === "outgoing") {
+  const textoOutgoing = String(content || "").trim();
+
+  // Evita que mensajes automáticos o notas del bot pausen otra vez el bot.
+  if (
+    textoOutgoing.includes("Respuesta del bot") ||
+    textoOutgoing.includes("asistente automático queda activo nuevamente") ||
+    textoOutgoing.includes("Como no hemos tenido actividad reciente del asesor")
+  ) {
+    console.log("⏭️ Outgoing ignorado porque parece mensaje automático del bot");
+    return;
+  }
+
   const sender =
     payload.sender ||
     payload.message?.sender ||
-    payload.conversation?.contact ||
-    payload.contact ||
     {};
 
   const contact =
     payload.conversation?.contact ||
     payload.contact ||
-    sender ||
     {};
 
   const phone =
     contact.phone_number ||
-    sender.phone_number ||
     payload.conversation?.meta?.sender?.phone_number ||
     payload.conversation?.contact_inbox?.source_id ||
     payload.contact_inbox?.source_id ||
@@ -978,7 +992,6 @@ if (messageType === "outgoing") {
   marcarAsesorActivo(from);
   return;
 }
-
 // Solo procesamos mensajes entrantes reales del cliente
 if (messageType !== "incoming") return;
 
