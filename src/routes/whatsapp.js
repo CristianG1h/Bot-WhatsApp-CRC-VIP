@@ -23,7 +23,13 @@ const {
 } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
-const { getMessage } = require("../utils/messages");
+const {
+  getMessage,
+  detectarPreguntaRapida,
+  obtenerRespuestaPreguntaRapida,
+  esRespuestaSi,
+  esRespuestaNo,
+} = require("../utils/messages");
 const { enviarCorreoCita } = require("../services/email");
 const {
   logIncomingMessage,
@@ -809,6 +815,175 @@ function esSolicitudAsesor(msg) {
   );
 }
 
+function esProcesoActivoParaFAQ(step) {
+  return ![
+    "MENU_INICIAL",
+    "MENU_PRINCIPAL",
+    "MENU_INFORMACION",
+    "CIA_MENU",
+    "CIA_FINAL",
+    "HUMANO",
+    "FAQ_CONTINUAR",
+    "ENVIANDO_CORREO_CITA",
+  ].includes(step);
+}
+
+function preguntaActualPorStep(session) {
+  switch (session.step) {
+    case "MENU_TRAMITE":
+      return menuTramite();
+
+    case "COMPARENDO":
+      return "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro";
+
+    case "COMPARENDO_SIMIT_DOCUMENTO":
+      return "Por favor envíame tu número de cédula sin puntos ni espacios para consultar SIMIT.";
+
+    case "SIMIT_DECISION_CRC":
+      return `¿Qué deseas hacer?
+
+1️⃣ Hablar con un asesor para comparendos
+2️⃣ Seguir con la consulta de renovación en RUNT`;
+
+    case "CEDULA":
+      return "Por favor envíame tu número de cédula sin puntos ni espacios.";
+
+    case "AGENDAR":
+      return `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
+
+1️⃣ Sí, quiero agendar
+2️⃣ No por ahora`;
+
+    case "DIA_CITA":
+      return menuDiasCita();
+
+    case "DIA_PERSONALIZADO":
+      return `Indícanos qué día deseas asistir.
+
+Ejemplo:
+*viernes 8 de mayo de 2026*
+*lunes 11 de mayo de 2026*
+*15 de mayo de 2026*
+*la otra semana*`;
+
+    case "HORARIO_CITA": {
+      const fechaCita = session.fechaCitaISO
+        ? new Date(`${session.fechaCitaISO}T12:00:00-05:00`)
+        : null;
+
+      if (fechaCita) return menuHorariosCita(fechaCita);
+
+      return `Horarios disponibles habituales:
+
+1️⃣ 7:00 a.m. a 9:00 a.m.
+2️⃣ 9:00 a.m. a 11:00 a.m.
+3️⃣ 11:00 a.m. a 1:00 p.m.
+4️⃣ 1:00 p.m. a 3:30 p.m.
+5️⃣ Otro horario`;
+    }
+
+    case "HORARIO_PERSONALIZADO":
+      return `Indícanos el horario aproximado que prefieres.
+
+Ejemplo:
+*10:00 a.m.*
+*Después de las 2:00 p.m.*
+*En la mañana*`;
+
+    case "NOMBRE_CITA":
+      return "Ahora envíame tu *nombre completo*.";
+
+    case "CEDULA_CITA":
+      return "Ahora envíame tu *número de cédula*, sin puntos ni espacios.";
+
+    case "TELEFONO_CITA":
+      return "Ahora envíame tu *número de teléfono de contacto*.";
+
+    case "CORREO_CITA":
+      return "Ahora envíame tu *correo electrónico* para enviarte la confirmación de la cita.";
+
+    case "CONFIRMAR_CITA": {
+      const datos = {
+        nombre: session.nombreCita,
+        cedula: session.cedulaCita || session.cedula,
+        telefono: session.telefonoCita,
+        correo: session.correoCita,
+        dia: session.diaCita || "Día por confirmar",
+        horario: session.horarioCita || "Horario por confirmar",
+        tramite: session.tramite || "Licencia de conducción",
+      };
+
+      return `Por favor confirma que los datos estén correctos:
+
+👤 Nombre: *${datos.nombre || ""}*
+🪪 Cédula: *${datos.cedula || ""}*
+📞 Teléfono: *${datos.telefono || ""}*
+📧 Correo: *${datos.correo || ""}*
+🚗 Trámite: *${datos.tramite}*
+📅 Día: *${datos.dia}*
+⏰ Horario: *${datos.horario}*
+
+1️⃣ Confirmar cita
+2️⃣ Corregir datos`;
+    }
+
+    default:
+      return menuPrincipal();
+  }
+}
+
+async function manejarPreguntaRapida(from, msg, session) {
+  const tipo = detectarPreguntaRapida(msg);
+
+  if (!tipo) {
+    return false;
+  }
+
+  const respuesta = obtenerRespuestaPreguntaRapida(tipo);
+
+  if (!respuesta) {
+    return false;
+  }
+
+  const procesoActivo = esProcesoActivoParaFAQ(session.step);
+
+  await responder(from, respuesta);
+
+  if (procesoActivo) {
+    updateSession(from, {
+      step: "FAQ_CONTINUAR",
+      faqReturnStep: session.step,
+      faqPreguntaRespondida: tipo,
+    });
+
+    await responder(
+      from,
+      `¿Quieres seguir con el proceso donde íbamos?
+
+1️⃣ Sí, continuar
+2️⃣ No, volver al menú`
+    );
+
+    return true;
+  }
+
+  updateSession(from, {
+    step: "MENU_PRINCIPAL",
+    linea: "CRC",
+  });
+
+  await responder(
+    from,
+    `¿Deseas que te ayudemos con tu proceso de licencia?
+
+1️⃣ Quiero sacar o renovar mi licencia
+2️⃣ Quiero información del proceso
+3️⃣ Hablar con asesor`
+  );
+
+  return true;
+}
+
 async function transferirAAsesor(
   from,
   motivo = "Usuario solicitó hablar con asesor"
@@ -1179,6 +1354,50 @@ async function procesarMensaje(from, text, options = {}) {
   // Si el usuario pide asesor en cualquier momento
 if (esSolicitudAsesor(msg)) {
   await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
+  return;
+}
+
+  if (session.step === "FAQ_CONTINUAR") {
+  const returnStep = session.faqReturnStep || "MENU_PRINCIPAL";
+
+  if (esRespuestaSi(msg)) {
+    updateSession(from, {
+      step: returnStep,
+      faqReturnStep: null,
+      faqPreguntaRespondida: null,
+    });
+
+    const sessionActualizada = getSession(from);
+
+    await responder(
+      from,
+      `Perfecto ✅ continuemos.
+
+${preguntaActualPorStep(sessionActualizada)}`
+    );
+
+    return;
+  }
+
+  if (esRespuestaNo(msg)) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
+    return;
+  }
+
+  await responder(
+    from,
+    `Por favor responde:
+
+1️⃣ Sí, continuar
+2️⃣ No, volver al menú`
+  );
+
+  return;
+}
+
+if (await manejarPreguntaRapida(from, msg, session)) {
   return;
 }
 
