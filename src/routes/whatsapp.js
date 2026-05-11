@@ -115,15 +115,26 @@ iniciarVerificadorAsesor();
 
 const processedIncomingMessages = new Map();
 
-function normalizarKeyDuplicado(from, text) {
-  return `${String(from || "").trim()}::${String(text || "")
+function obtenerKeyDuplicado(from, text, options = {}) {
+  // Lo ideal: deduplicar por ID real del mensaje.
+  if (options.messageId) {
+    return `id:${options.messageId}`;
+  }
+
+  // Fallback: si no hay ID, usamos texto pero con TTL corto.
+  // Así no bloquea respuestas legítimas como "1" varias veces en el flujo.
+  return `fallback:${String(from || "").trim()}::${String(text || "")
     .trim()
-    .toLowerCase()}`;
+    .toLowerCase()}::${options.source || "unknown"}`;
 }
 
-function esMensajeDuplicado(from, text, ttlMs = 45000) {
-  const key = normalizarKeyDuplicado(from, text);
+function esMensajeDuplicado(from, text, options = {}) {
+  const key = obtenerKeyDuplicado(from, text, options);
   const now = Date.now();
+
+  // Si hay ID real, podemos usar ventana más amplia.
+  // Si no hay ID, usamos ventana corta para no bloquear respuestas válidas.
+  const ttlMs = options.messageId ? 45000 : 2500;
 
   const lastTime = processedIncomingMessages.get(key);
 
@@ -134,7 +145,7 @@ function esMensajeDuplicado(from, text, ttlMs = 45000) {
   processedIncomingMessages.set(key, now);
 
   for (const [k, time] of processedIncomingMessages.entries()) {
-    if (now - time > ttlMs) {
+    if (now - time > 60000) {
       processedIncomingMessages.delete(k);
     }
   }
@@ -1101,9 +1112,10 @@ router.post("/twilio", async (req, res) => {
     console.log("Usuario:", from);
 
     await procesarMensaje(from, text, {
-      source: "twilio",
-      skipChatwootIncomingLog: false,
-    });
+  source: "twilio",
+  skipChatwootIncomingLog: false,
+  messageId: req.body.MessageSid || req.body.SmsMessageSid || null,
+});
   } catch (error) {
     console.error("❌ Error webhook Twilio:", error.message);
   }
@@ -1257,20 +1269,27 @@ if (messageType !== "incoming") return;
     console.log("Inbox Chatwoot:", payloadInboxId);
 
     await procesarMensaje(from, text, {
-      source: "chatwoot",
-      skipChatwootIncomingLog: true,
-    });
+  source: "chatwoot",
+  skipChatwootIncomingLog: true,
+  messageId:
+    payload.id ||
+    payload.message?.id ||
+    payload.message_id ||
+    payload.content_attributes?.external_id ||
+    null,
+});
   } catch (error) {
     console.error("❌ Error webhook Chatwoot:", error.message);
   }
 });
 
 async function procesarMensaje(from, text, options = {}) {
-  if (esMensajeDuplicado(from, text)) {
+  if (esMensajeDuplicado(from, text, options)) {
     console.log("⏭️ Mensaje duplicado ignorado:", {
       from,
       text,
       source: options.source || "unknown",
+      messageId: options.messageId || null,
     });
     return;
   }
