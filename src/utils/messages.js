@@ -1046,12 +1046,18 @@ function getMessage(type) {
     simitSinPendientes,
     simitDecisionInvalida,
     asesorComparendos,
-    detectarPreguntaRapida,
-    obtenerRespuestaPreguntaRapida,
-    esRespuestaSi,
-    esRespuestaNo,
   };
 
+  return randomItem(grupos[type] || precios);
+}
+
+module.exports = {
+  getMessage,
+  detectarPreguntaRapida,
+  obtenerRespuestaPreguntaRapida,
+  esRespuestaSi,
+  esRespuestaNo,
+};
   return randomItem(grupos[type] || precios);
 }
 
