@@ -1059,4 +1059,3 @@ module.exports = {
   esRespuestaNo,
 };
 
-module.exports = { getMessage };
