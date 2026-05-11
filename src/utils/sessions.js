@@ -40,8 +40,13 @@ function resetSession(phone) {
   console.log("🧹 Sesión reiniciada:", phone);
 }
 
+function getAllSessions() {
+  return Array.from(sessions.entries());
+}
+
 module.exports = {
   getSession,
   updateSession,
   resetSession,
+  getAllSessions,
 };
