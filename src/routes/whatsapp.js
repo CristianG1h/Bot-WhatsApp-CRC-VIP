@@ -957,8 +957,8 @@ Un asesor te responderá en el próximo horario disponible.`
 
 if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
   resetSession(from);
-  updateSession(from, { step: "MENU_INICIAL" });
-  await responder(from, menuInicial());
+  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+  await responder(from, menuPrincipal());
   return;
 }
 
@@ -967,17 +967,18 @@ if (esSolicitudAsesor(msg)) {
   return;
 }
   if (session.step === "MENU_INICIAL") {
-    if (msg === "1" || msg.includes("crc")) {
-      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-      await responder(from, menuPrincipal());
-      return;
-    }
+  // Ahora el bot entra directo al flujo CRC/RUNT.
+  // No eliminamos CIA/SIMIT, solo dejamos de mostrarlo en el menú inicial.
+  if (msg.includes("cia") || msg.includes("simit") || msg.includes("comparendo")) {
+    updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+    await responder(from, menuCia());
+    return;
+  }
 
-    if (msg === "2" || msg.includes("cia") || msg.includes("simit")) {
-      updateSession(from, { step: "CIA_MENU", linea: "CIA" });
-      await responder(from, menuCia());
-      return;
-    }
+  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+  await responder(from, menuPrincipal());
+  return;
+}
 
     await responder(from, menuInicial());
     return;
@@ -1078,8 +1079,8 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
     if (msg === "2" || msg.includes("volver") || msg.includes("menu")) {
       resetSession(from);
-      updateSession(from, { step: "MENU_INICIAL" });
-      await responder(from, menuInicial());
+updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+await responder(from, menuPrincipal());
       return;
     }
 
@@ -1145,9 +1146,9 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
     }
 
     if (msg === "3") {
-      resetSession(from);
-      updateSession(from, { step: "MENU_INICIAL" });
-      await responder(from, menuInicial());
+     resetSession(from);
+updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+await responder(from, menuPrincipal());
       return;
     }
 
@@ -1194,8 +1195,8 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
     if (msg === "7") {
       resetSession(from);
-      updateSession(from, { step: "MENU_INICIAL" });
-      await responder(from, menuInicial());
+updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+await responder(from, menuPrincipal());
       return;
     }
 
@@ -1487,7 +1488,8 @@ return;
 
   if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
     resetSession(from);
-    updateSession(from, { step: "MENU_INICIAL" });
+updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+await responder(from, menuPrincipal());
 
     await responder(
       from,
@@ -1984,14 +1986,7 @@ Recuerda traer tu documento físico original.`
 }
 
 function menuInicial() {
-  return `Hola 👋 Bienvenido a *CRC VIP Galerías* y *CIA VIP*.
-
-¿En qué podemos ayudarte hoy?
-
-1️⃣ CRC - Licencias de conducción
-2️⃣ CIA VIP - Comparendos / SIMIT
-
-Escribe el número de la opción.`;
+  return menuPrincipal();
 }
 
 function menuPrincipal() {
