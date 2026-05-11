@@ -1058,7 +1058,5 @@ module.exports = {
   esRespuestaSi,
   esRespuestaNo,
 };
-  return randomItem(grupos[type] || precios);
-}
 
 module.exports = { getMessage };
