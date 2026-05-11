@@ -896,94 +896,106 @@ router.post("/chatwoot", async (req, res) => {
 });
 
 async function procesarMensaje(from, text, options = {}) {
+  if (esMensajeDuplicado && esMensajeDuplicado(from, text)) {
+    console.log("⏭️ Mensaje duplicado ignorado:", {
+      from,
+      text,
+      source: options.source || "unknown",
+    });
+    return;
+  }
+
   const session = getSession(from);
   const msg = text.toLowerCase().trim();
 
   console.log("Mensaje recibido:", text);
   console.log("Usuario:", from);
+  console.log("Fuente:", options.source || "direct");
   console.log("➡️ Paso actual:", session.step);
-  
-  if (isRateLimited(from, session.step)) {
-  await responder(
-    from,
-    "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
-  );
-  return;
-}
 
-// Si el usuario está con asesor, el bot NO debe responder automático.
-// Solo se reinicia si escribe explícitamente menu, menú, inicio o volver.
-if (session.step === "HUMANO") {
-  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_INICIAL" });
-    await responder(from, menuInicial());
+  if (isRateLimited(from, session.step)) {
+    await responder(
+      from,
+      "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
+    );
     return;
   }
 
-  const asesorDisponible = esHorarioAsesorDisponible();
+  // Si el usuario está con asesor, el bot NO debe responder automático.
+  // Solo se reinicia si escribe explícitamente menu, menú, inicio o volver.
+  if (session.step === "HUMANO") {
+    if (["menu", "menú", "inicio", "volver"].includes(msg)) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
+      return;
+    }
 
-  updateSession(from, {
-    asesorDisponible,
-  });
+    const asesorDisponible = esHorarioAsesorDisponible();
 
- console.log(
-  "🔔 Usuario en modo asesor:",
-  from,
-  asesorDisponible
-    ? "Usuario respondió en modo asesor dentro del horario disponible"
-    : "Usuario respondió en modo asesor fuera del horario disponible"
-);
-
-  if (!asesorDisponible && !session.avisoFueraHorarioEnviado) {
     updateSession(from, {
-      avisoFueraHorarioEnviado: true,
+      asesorDisponible,
     });
 
-    await responder(
+    console.log(
+      "🔔 Usuario en modo asesor:",
       from,
-      `Gracias ✅
+      asesorDisponible
+        ? "Usuario respondió en modo asesor dentro del horario disponible"
+        : "Usuario respondió en modo asesor fuera del horario disponible"
+    );
+
+    if (!asesorDisponible && !session.avisoFueraHorarioEnviado) {
+      updateSession(from, {
+        avisoFueraHorarioEnviado: true,
+      });
+
+      await responder(
+        from,
+        `Gracias ✅
 
 Tu mensaje quedó registrado para el asesor.
 
 ${textoHorarioAsesor()}
 
 Un asesor te responderá en el próximo horario disponible.`
-    );
+      );
+    }
+
+    return;
   }
 
-  return;
-}
+  // Saludos o menú ahora van directo al flujo CRC/RUNT.
+  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
+    return;
+  }
 
-if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
-  resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-  await responder(from, menuPrincipal());
-  return;
-}
+  if (esSolicitudAsesor(msg)) {
+    await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
+    return;
+  }
 
-if (esSolicitudAsesor(msg)) {
-  await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
-  return;
-}
   if (session.step === "MENU_INICIAL") {
-  // Ahora el bot entra directo al flujo CRC/RUNT.
-  // No eliminamos CIA/SIMIT, solo dejamos de mostrarlo en el menú inicial.
-  if (msg.includes("cia") || msg.includes("simit") || msg.includes("comparendo")) {
-    updateSession(from, { step: "CIA_MENU", linea: "CIA" });
-    await responder(from, menuCia());
+    // Ahora el bot entra directo al flujo CRC/RUNT.
+    // No eliminamos CIA/SIMIT, solo dejamos de mostrarlo en el menú inicial.
+    if (
+      msg.includes("cia") ||
+      msg.includes("simit") ||
+      msg.includes("comparendo") ||
+      msg.includes("comparendos")
+    ) {
+      updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+      await responder(from, menuCia());
+      return;
+    }
+
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
     return;
   }
-
-  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-  await responder(from, menuPrincipal());
-  return;
-}
-
-    await responder(from, menuInicial());
-    return;
-  }
-
   // ─────────────────────────────────────────────
   // FLUJO CIA VIP / SIMIT
   // ─────────────────────────────────────────────
