@@ -55,6 +55,36 @@ function esMensajeDuplicado(from, text, ttlMs = 45000) {
   return false;
 }
 
+function esIntencionCia(msg) {
+  return (
+    msg.includes("simit") ||
+    msg.includes("comparendo") ||
+    msg.includes("comparendos") ||
+    msg.includes("multa") ||
+    msg.includes("multas") ||
+    msg.includes("curso comparendo") ||
+    msg.includes("curso de comparendo")
+  );
+}
+
+function esIntencionCrc(msg) {
+  return (
+    msg.includes("licencia") ||
+    msg.includes("licencias") ||
+    msg.includes("renovar") ||
+    msg.includes("renovacion") ||
+    msg.includes("renovación") ||
+    msg.includes("refrendacion") ||
+    msg.includes("refrendación") ||
+    msg.includes("pase") ||
+    msg.includes("conduccion") ||
+    msg.includes("conducción") ||
+    msg.includes("examen medico") ||
+    msg.includes("examen médico") ||
+    msg.includes("agendar") ||
+    msg.includes("cita")
+  );
+}
 async function responder(to, body) {
   const texto = String(body || "");
 
@@ -925,7 +955,7 @@ router.post("/chatwoot", async (req, res) => {
 });
 
 async function procesarMensaje(from, text, options = {}) {
-  if (esMensajeDuplicado && esMensajeDuplicado(from, text)) {
+  if (esMensajeDuplicado(from, text)) {
     console.log("⏭️ Mensaje duplicado ignorado:", {
       from,
       text,
@@ -994,37 +1024,43 @@ Un asesor te responderá en el próximo horario disponible.`
     return;
   }
 
-  // Saludos o menú ahora van directo al flujo CRC/RUNT.
-  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-    await responder(from, menuPrincipal());
-    return;
-  }
+  // Si el usuario pide asesor en cualquier momento
+if (esSolicitudAsesor(msg)) {
+  await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
+  return;
+}
 
-  if (esSolicitudAsesor(msg)) {
-    await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
-    return;
-  }
+// Si escribe algo relacionado con comparendos/SIMIT, entra a CIA.
+// OJO: NO usamos msg.includes("cia") porque "licencia" contiene "cia".
+if (esIntencionCia(msg)) {
+  updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+  await responder(from, menuCia());
+  return;
+}
 
-  if (session.step === "MENU_INICIAL") {
-    // Ahora el bot entra directo al flujo CRC/RUNT.
-    // No eliminamos CIA/SIMIT, solo dejamos de mostrarlo en el menú inicial.
-    if (
-      msg.includes("cia") ||
-      msg.includes("simit") ||
-      msg.includes("comparendo") ||
-      msg.includes("comparendos")
-    ) {
-      updateSession(from, { step: "CIA_MENU", linea: "CIA" });
-      await responder(from, menuCia());
-      return;
-    }
+// Si escribe algo relacionado con licencia, cita, renovar, examen, etc.
+// entra directo al menú CRC.
+if (esIntencionCrc(msg)) {
+  resetSession(from);
+  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+  await responder(from, menuPrincipal());
+  return;
+}
 
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-    await responder(from, menuPrincipal());
-    return;
-  }
+// Saludos o menú también van directo a CRC.
+if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+  resetSession(from);
+  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+  await responder(from, menuPrincipal());
+  return;
+}
+
+if (session.step === "MENU_INICIAL") {
+  resetSession(from);
+  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+  await responder(from, menuPrincipal());
+  return;
+}
   // ─────────────────────────────────────────────
   // FLUJO CIA VIP / SIMIT
   // ─────────────────────────────────────────────
