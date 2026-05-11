@@ -26,6 +26,35 @@ const {
   markNeedsAgent,
 } = require("../services/chatwoot");
 
+const processedIncomingMessages = new Map();
+
+function normalizarKeyDuplicado(from, text) {
+  return `${String(from || "").trim()}::${String(text || "")
+    .trim()
+    .toLowerCase()}`;
+}
+
+function esMensajeDuplicado(from, text, ttlMs = 45000) {
+  const key = normalizarKeyDuplicado(from, text);
+  const now = Date.now();
+
+  const lastTime = processedIncomingMessages.get(key);
+
+  if (lastTime && now - lastTime < ttlMs) {
+    return true;
+  }
+
+  processedIncomingMessages.set(key, now);
+
+  for (const [k, time] of processedIncomingMessages.entries()) {
+    if (now - time > ttlMs) {
+      processedIncomingMessages.delete(k);
+    }
+  }
+
+  return false;
+}
+
 async function responder(to, body) {
   const texto = String(body || "");
 
