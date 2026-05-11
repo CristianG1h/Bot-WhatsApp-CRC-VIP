@@ -642,6 +642,394 @@ Por favor escribe:
 📌 Qué necesitas revisar en SIMIT`
 ];
 
+// ─────────────────────────────────────────────
+// RESPUESTAS RÁPIDAS / FAQ DURANTE EL FLUJO
+// ─────────────────────────────────────────────
+
+const FAQ_KEYWORDS = {
+  direccion: [
+    "direccion",
+    "dirección",
+    "ubicacion",
+    "ubicación",
+    "donde queda",
+    "dónde queda",
+    "maps",
+    "mapa",
+    "como llegar",
+    "cómo llegar",
+    "sede",
+  ],
+
+  precios: [
+    "precio",
+    "precios",
+    "valor",
+    "valores",
+    "cuanto cuesta",
+    "cuánto cuesta",
+    "costo",
+    "tarifa",
+    "cuanto vale",
+    "cuánto vale",
+    "descuento",
+  ],
+
+  horarios: [
+    "horario",
+    "horarios",
+    "atienden",
+    "hora atienden",
+    "a que hora",
+    "a qué hora",
+    "abren",
+    "cierran",
+    "hasta que hora",
+    "hasta qué hora",
+  ],
+
+  documentos: [
+    "documentos",
+    "requisitos",
+    "que debo llevar",
+    "qué debo llevar",
+    "cedula fisica",
+    "cédula física",
+    "documento fisico",
+    "documento físico",
+    "llevar",
+  ],
+
+  duracion: [
+    "duracion",
+    "duración",
+    "cuanto tarda",
+    "cuánto tarda",
+    "cuanto demora",
+    "cuánto demora",
+    "demora",
+    "tiempo",
+    "cuanto se demora",
+    "cuánto se demora",
+  ],
+
+  pagos: [
+    "pago",
+    "pagos",
+    "medios de pago",
+    "efectivo",
+    "nequi",
+    "daviplata",
+    "transferencia",
+    "tarjeta",
+    "datáfono",
+    "datafono",
+  ],
+
+  vigencia: [
+    "vigencia",
+    "certificado",
+    "vence",
+    "vencimiento",
+    "cuanto dura el examen",
+    "cuánto dura el examen",
+    "vigente",
+  ],
+};
+
+const FAQ_RESPONSES = {
+  direccion: [
+    `Claro ✅
+
+📍 *VIP CRC Galerías*
+Cra. 28a #51 70, Bogotá.
+
+Ubicación:
+https://maps.app.goo.gl/s5RAJ8grQDa7bSoo9
+
+Te esperamos para ayudarte con tu proceso.`,
+
+    `Sí claro ✅
+
+Estamos ubicados en:
+
+📍 *VIP CRC Galerías*
+Cra. 28a #51 70, Bogotá.
+
+Te dejo el mapa:
+https://maps.app.goo.gl/s5RAJ8grQDa7bSoo9`,
+
+    `Con gusto ✅
+
+Nuestra dirección es:
+
+📍 *Cra. 28a #51 70, Bogotá*
+VIP CRC Galerías.
+
+Puedes llegar con este enlace:
+https://maps.app.goo.gl/s5RAJ8grQDa7bSoo9`,
+
+    `Claro que sí ✅
+
+📍 *VIP CRC Galerías*
+Cra. 28a #51 70, Bogotá.
+
+Al llegar, indica que vienes para el examen médico de licencia.`,
+
+    `Por supuesto ✅
+
+La sede queda en:
+
+📍 *Cra. 28a #51 70, Bogotá*
+VIP CRC Galerías.
+
+Ubicación en Google Maps:
+https://maps.app.goo.gl/s5RAJ8grQDa7bSoo9`,
+  ],
+
+  precios: [
+    `Claro ✅
+
+Para renovación / refrendación de licencia, el valor normal es de *$240.000*.
+
+Por esta semana tenemos descuento especial y puedes pagar solo *$180.000* para categoría de carro.`,
+
+    `Sí claro ✅
+
+El trámite de renovación tiene valor normal de *$240.000*, pero actualmente manejamos promoción desde *$180.000* para categoría de carro.`,
+
+    `Con gusto ✅
+
+Para renovar licencia, el valor promocional que estamos manejando es de *$180.000*.
+
+El valor puede variar según el caso o categoría.`,
+
+    `Claro ✅
+
+Tenemos una promoción activa para renovación de licencia:
+
+💰 Valor normal: *$240.000*
+🎁 Promoción: *$180.000*
+
+Aplica según categoría y validación del caso.`,
+
+    `Te cuento ✅
+
+El examen/proceso para renovación de licencia puede quedar en promoción desde *$180.000*.
+
+Podemos validar tu caso y orientarte con el valor correcto.`,
+  ],
+
+  horarios: [
+    `Claro ✅
+
+🕒 *Horario de atención VIP CRC Galerías:*
+
+Lunes a viernes:
+*7:00 a.m. a 3:30 p.m.*
+
+Sábados:
+*7:00 a.m. a 11:00 a.m.*
+
+Domingos y festivos no laboramos.`,
+
+    `Sí claro ✅
+
+Atendemos en estos horarios:
+
+📅 Lunes a viernes: *7:00 a.m. a 3:30 p.m.*
+📅 Sábados: *7:00 a.m. a 11:00 a.m.*
+
+Domingos y festivos no hay atención.`,
+
+    `Con gusto ✅
+
+Nuestro horario es:
+
+🕒 Lunes a viernes de *7:00 a.m. a 3:30 p.m.*
+🕒 Sábados de *7:00 a.m. a 11:00 a.m.*
+
+Te recomendamos venir con tiempo.`,
+
+    `Claro ✅
+
+Puedes asistir:
+
+Lunes a viernes: *7:00 a.m. a 3:30 p.m.*
+Sábados: *7:00 a.m. a 11:00 a.m.*
+
+No atendemos domingos ni festivos.`,
+
+    `Te confirmo ✅
+
+VIP CRC Galerías atiende de lunes a viernes hasta las *3:30 p.m.* y sábados hasta las *11:00 a.m.*`,
+  ],
+
+  documentos: [
+    `Claro ✅
+
+Para el examen médico de licencia debes traer:
+
+🪪 *Documento físico original*
+📱 Número de contacto
+📧 Correo electrónico`,
+
+    `Sí claro ✅
+
+El requisito principal es traer tu *documento físico original*.
+
+También te pediremos teléfono y correo para dejar registrada la atención.`,
+
+    `Con gusto ✅
+
+Debes presentar tu documento de identidad original en físico.
+
+Si estás renovando, también es importante validar tu estado en RUNT.`,
+
+    `Claro ✅
+
+Para avanzar necesitas:
+
+🪪 Cédula física original
+📱 Celular de contacto
+📧 Correo electrónico
+
+Con eso podemos ayudarte con el proceso.`,
+
+    `Te cuento ✅
+
+Lo más importante es traer tu *documento original físico*. Sin ese documento no se puede completar correctamente la atención.`,
+  ],
+
+  duracion: [
+    `Claro ✅
+
+El examen médico normalmente puede tardar entre *30 minutos y 1 hora*, dependiendo del flujo de atención en sede.`,
+
+    `Sí claro ✅
+
+El proceso suele tomar aproximadamente entre *30 y 60 minutos*.
+
+Te recomendamos llegar con algo de tiempo.`,
+
+    `Con gusto ✅
+
+La atención puede tardar cerca de *1 hora*, dependiendo de la cantidad de usuarios que haya en el momento.`,
+
+    `Claro ✅
+
+Normalmente es un proceso rápido, pero calcula entre *30 minutos y 1 hora* para hacerlo con tranquilidad.`,
+
+    `Te explico ✅
+
+El tiempo depende del flujo de personas en sede, pero normalmente el examen está entre *30 y 60 minutos*.`,
+  ],
+
+  pagos: [
+    `Claro ✅
+
+Manejamos diferentes medios de pago según disponibilidad en sede:
+
+💵 Efectivo
+💳 Tarjeta / datáfono
+📲 Transferencia o medios digitales, si están habilitados.`,
+
+    `Sí claro ✅
+
+Puedes pagar en sede. Normalmente se manejan opciones como efectivo, tarjeta o transferencia según disponibilidad.`,
+
+    `Con gusto ✅
+
+Los medios de pago se confirman directamente en sede, pero normalmente contamos con efectivo y medios electrónicos.`,
+
+    `Claro ✅
+
+Al momento de la atención puedes confirmar el medio de pago disponible con el asesor en sede.`,
+
+    `Te cuento ✅
+
+Puedes consultar el medio de pago al llegar. Generalmente se manejan efectivo y opciones digitales según disponibilidad.`,
+  ],
+
+  vigencia: [
+    `Claro ✅
+
+El certificado médico del CRC tiene una vigencia de *6 meses*.
+
+Puedes adelantar tu examen y usarlo dentro de ese tiempo para avanzar con la licencia.`,
+
+    `Sí claro ✅
+
+El examen médico queda vigente por *6 meses* desde la fecha de expedición.`,
+
+    `Con gusto ✅
+
+La vigencia del certificado médico es de *6 meses*, por eso puedes adelantar esa parte del trámite.`,
+
+    `Claro ✅
+
+Tu certificado del CRC tiene validez de *6 meses*. Durante ese tiempo puedes usarlo para completar el proceso de licencia.`,
+
+    `Te confirmo ✅
+
+La vigencia es de *6 meses*. Por eso muchas personas hacen primero el examen y luego completan el trámite pendiente.`,
+  ],
+};
+
+function detectarPreguntaRapida(textoOriginal) {
+  const texto = String(textoOriginal || "").toLowerCase();
+
+  for (const [tipo, keywords] of Object.entries(FAQ_KEYWORDS)) {
+    if (keywords.some((keyword) => texto.includes(keyword))) {
+      return tipo;
+    }
+  }
+
+  return null;
+}
+
+function obtenerRespuestaPreguntaRapida(tipo) {
+  const respuestas = FAQ_RESPONSES[tipo];
+
+  if (!respuestas || !respuestas.length) {
+    return null;
+  }
+
+  const index = Math.floor(Math.random() * respuestas.length);
+  return respuestas[index];
+}
+
+function esRespuestaSi(textoOriginal) {
+  const texto = String(textoOriginal || "").toLowerCase().trim();
+
+  return (
+    texto === "1" ||
+    texto === "si" ||
+    texto === "sí" ||
+    texto.includes("seguir") ||
+    texto.includes("continuar") ||
+    texto.includes("sigamos") ||
+    texto.includes("dale") ||
+    texto.includes("ok") ||
+    texto.includes("listo") ||
+    texto.includes("claro")
+  );
+}
+
+function esRespuestaNo(textoOriginal) {
+  const texto = String(textoOriginal || "").toLowerCase().trim();
+
+  return (
+    texto === "2" ||
+    texto === "no" ||
+    texto.includes("despues") ||
+    texto.includes("después") ||
+    texto.includes("luego") ||
+    texto.includes("no por ahora") ||
+    texto.includes("cancelar")
+  );
+}
+
 function getMessage(type) {
   const grupos = {
     precios,
@@ -658,6 +1046,10 @@ function getMessage(type) {
     simitSinPendientes,
     simitDecisionInvalida,
     asesorComparendos,
+    detectarPreguntaRapida,
+    obtenerRespuestaPreguntaRapida,
+    esRespuestaSi,
+    esRespuestaNo,
   };
 
   return randomItem(grupos[type] || precios);
