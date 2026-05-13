@@ -1587,31 +1587,43 @@ await responder(from, menuPrincipal());
     return;
   }
 
-  if (session.step === "MENU_TRAMITE") {
-    if (msg === "1") {
-      updateSession(from, {
-        tramite: "Renovación / Refrendación",
-        step: "COMPARENDO",
-      });
-      await responder(
-        from,
-        "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
-      );
-      return;
-    }
+  if (msg === "1") {
+  updateSession(from, {
+    tramite: "Renovación / Refrendación",
+    comparendos: "No preguntado",
+    step: "CEDULA",
+  });
 
-    if (msg === "2") {
-      updateSession(from, {
-        tramite: "Primera vez",
-        step: "COMPARENDO",
-      });
-      await responder(
-        from,
-        "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro"
-      );
-      return;
-    }
+  await responder(
+    from,
+    `Perfecto ✅
 
+Vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`
+  );
+
+  return;
+}
+
+   if (msg === "2") {
+  updateSession(from, {
+    tramite: "Primera vez",
+    comparendos: "No preguntado",
+    step: "CEDULA",
+  });
+
+  await responder(
+    from,
+    `Perfecto ✅
+
+Vamos a revisar tu información en RUNT para orientarte con el trámite correcto.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`
+  );
+
+  return;
+}
     if (msg === "3") {
      resetSession(from);
 updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
