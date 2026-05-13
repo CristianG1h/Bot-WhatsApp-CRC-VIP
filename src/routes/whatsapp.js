@@ -1586,7 +1586,7 @@ await responder(from, menuPrincipal());
     await responder(from, menuPrincipal());
     return;
   }
-
+if (session.step === "MENU_TRAMITE") {
   if (msg === "1") {
   updateSession(from, {
     tramite: "Renovación / Refrendación",
