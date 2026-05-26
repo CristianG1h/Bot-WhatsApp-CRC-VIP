@@ -99,11 +99,11 @@ function iniciarVerificadorAsesor() {
       const sesiones = getAllSessions();
 
       for (const [from, session] of sesiones) {
-  if (!session?.botPausadoPorAsesor) continue;
-  if (session?.avisoReactivacionBotEnviado) continue;
+        if (!session?.botPausadoPorAsesor) continue;
+        if (session?.avisoReactivacionBotEnviado) continue;
 
-  await reactivarBotPorInactividad(from, session);
-}
+        await reactivarBotPorInactividad(from, session);
+      }
     } catch (error) {
       console.error("❌ Error verificando inactividad de asesor:", error.message);
     }
@@ -117,14 +117,10 @@ iniciarVerificadorAsesor();
 const processedIncomingMessages = new Map();
 
 function obtenerKeyDuplicado(from, text, options = {}) {
-  // Lo ideal: deduplicar por ID real del mensaje.
   if (options.messageId) {
     return `id:${options.messageId}`;
   }
 
-  // Fallback: si no hay ID, usamos texto pero con TTL corto.
-  // Así no bloquea respuestas legítimas como "1" varias veces en el flujo.
-  Stats.mensajeNoReconocido(from, text);
   return `fallback:${String(from || "").trim()}::${String(text || "")
     .trim()
     .toLowerCase()}::${options.source || "unknown"}`;
@@ -133,9 +129,6 @@ function obtenerKeyDuplicado(from, text, options = {}) {
 function esMensajeDuplicado(from, text, options = {}) {
   const key = obtenerKeyDuplicado(from, text, options);
   const now = Date.now();
-
-  // Si hay ID real, podemos usar ventana más amplia.
-  // Si no hay ID, usamos ventana corta para no bloquear respuestas válidas.
   const ttlMs = options.messageId ? 45000 : 2500;
 
   const lastTime = processedIncomingMessages.get(key);
@@ -185,6 +178,7 @@ function esIntencionCrc(msg) {
     msg.includes("cita")
   );
 }
+
 async function responder(to, body) {
   const texto = String(body || "");
 
@@ -247,13 +241,6 @@ function tienePendientesSimit(resultadoSimit) {
   return comparendos.length > 0 || multas.length > 0 || acuerdosPago.length > 0;
 }
 
-/**
- * En el flujo CRC no queremos que el resultado SIMIT termine diciendo:
- * "¿Deseas que un asesor de CIA VIP revise tu caso?"
- * porque después nosotros mostramos la pregunta correcta para CRC:
- * 1. Asesor comparendos
- * 2. Seguir con RUNT
- */
 function limpiarMensajeSimitParaCRC(mensaje) {
   let texto = String(mensaje || "").trim();
 
@@ -296,27 +283,19 @@ async function consultarRuntYContinuar(from, cedula) {
 
   try {
     const resultado = await consultarRuntPorCedula(cedula);
+    Stats.runtConsultado(from, cedula, "ok");
+
     const respuesta = formatearResultadoWhatsApp(cedula, resultado);
 
     await responder(from, respuesta);
 
-    /**
-     * IMPORTANTE:
-     * Ya no mandamos aquí otro mensaje preguntando "hoy, mañana u otro día",
-     * porque el formateador de RUNT ya pregunta si desea agendar:
-     *
-     * 1️⃣ Sí, quiero agendar
-     * 2️⃣ No por ahora
-     *
-     * Ahora dejamos al usuario en AGENDAR y ahí sí, si responde 1,
-     * le mostramos los horarios aproximados.
-     */
     updateSession(from, {
       step: "AGENDAR",
       cedula,
     });
   } catch (error) {
     console.error("❌ Error RUNT:", error.message);
+    Stats.runtConsultado(from, cedula, "error");
 
     await responder(
       from,
@@ -324,7 +303,6 @@ async function consultarRuntYContinuar(from, cedula) {
     );
   }
 }
-
 
 const DIAS_SEMANA = [
   "domingo",
@@ -351,12 +329,6 @@ const MESES = [
   "diciembre",
 ];
 
-/**
- * IMPORTANTE:
- * Estas fechas se manejan como "fecha/hora local de Bogotá" guardada en UTC.
- * Por eso usamos getUTCFullYear, getUTCMonth, getUTCDate, getUTCHours, etc.
- * Así evitamos que Render cambie la hora por la zona horaria del servidor.
- */
 function crearFechaLocalBogota(year, month, day, hour = 12, minute = 0) {
   return new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
 }
@@ -478,11 +450,11 @@ function festivosColombia(year) {
   leyEmiliani(1, 6);
   leyEmiliani(3, 19);
 
-  festivos.push(sumarDias(pascua, -3)); // Jueves Santo
-  festivos.push(sumarDias(pascua, -2)); // Viernes Santo
-  festivos.push(siguienteLunes(sumarDias(pascua, 39))); // Ascensión
-  festivos.push(siguienteLunes(sumarDias(pascua, 60))); // Corpus Christi
-  festivos.push(siguienteLunes(sumarDias(pascua, 68))); // Sagrado Corazón
+  festivos.push(sumarDias(pascua, -3));
+  festivos.push(sumarDias(pascua, -2));
+  festivos.push(siguienteLunes(sumarDias(pascua, 39)));
+  festivos.push(siguienteLunes(sumarDias(pascua, 60)));
+  festivos.push(siguienteLunes(sumarDias(pascua, 68)));
 
   fijo(5, 1);
   leyEmiliani(6, 29);
@@ -580,7 +552,6 @@ function obtenerSlotsDisponibles(fecha) {
   return slotsBasePorFecha(fecha)
     .filter((slot) => {
       if (!esHoy) return true;
-
       return slot.fin > ahoraMin + margenMin;
     })
     .map((slot) => {
@@ -727,11 +698,7 @@ function detectarHorario(msg, fechaCita = null) {
     return "Otro horario";
   }
 
-  if (
-    msg.includes("otro") ||
-    msg.includes("otra") ||
-    msg.includes("diferente")
-  ) {
+  if (msg.includes("otro") || msg.includes("otra") || msg.includes("diferente")) {
     return "Otro horario";
   }
 
@@ -797,12 +764,12 @@ function esHorarioAsesorDisponible() {
     Date.UTC(ahora.year, ahora.month - 1, ahora.day, 12, 0, 0)
   );
 
-  const diaSemana = fecha.getUTCDay(); 
+  const diaSemana = fecha.getUTCDay();
   const minutos = ahora.hour * 60 + ahora.minute;
 
   const esLunesAViernes = diaSemana >= 1 && diaSemana <= 5;
-  const inicio = 12 * 60; // 12:00 p.m.
-  const fin = 19 * 60; // 7:00 p.m.
+  const inicio = 12 * 60;
+  const fin = 19 * 60;
 
   return esLunesAViernes && minutos >= inicio && minutos < fin;
 }
@@ -1001,15 +968,12 @@ async function transferirAAsesor(
   motivo = "Usuario solicitó hablar con asesor"
 ) {
   const asesorDisponible = esHorarioAsesorDisponible();
+  Stats.asesorActivado(from, motivo);
 
   updateSession(from, {
     step: "HUMANO",
     necesitaAsesor: true,
     asesorDisponible,
-
-    // IMPORTANTE:
-    // Desde que el usuario pide asesor, pausamos el bot.
-    // Si pasan 10 minutos sin atención, el bot se reactiva.
     botPausadoPorAsesor: true,
     asesorActivo: asesorDisponible,
     asesorLastAt: Date.now(),
@@ -1050,6 +1014,7 @@ Déjanos por favor tu consulta en este chat y un asesor te responderá en el pr�
 También puedes escribir *menu* si deseas volver al asistente automático.`
   );
 }
+
 function resumenCita(datos) {
   return `✅ *Cita preconfirmada - VIP CRC Galerías*
 
@@ -1094,7 +1059,10 @@ router.post("/", async (req, res) => {
 
     if (!from || !text) return;
 
-    await procesarMensaje(from, text);
+    await procesarMensaje(from, text, {
+      source: "meta",
+      messageId: message.id || null,
+    });
   } catch (error) {
     console.error("❌ Error webhook Meta:", error.message);
   }
@@ -1113,10 +1081,10 @@ router.post("/twilio", async (req, res) => {
     console.log("Usuario:", from);
 
     await procesarMensaje(from, text, {
-  source: "twilio",
-  skipChatwootIncomingLog: false,
-  messageId: req.body.MessageSid || req.body.SmsMessageSid || null,
-});
+      source: "twilio",
+      skipChatwootIncomingLog: false,
+      messageId: req.body.MessageSid || req.body.SmsMessageSid || null,
+    });
   } catch (error) {
     console.error("❌ Error webhook Twilio:", error.message);
   }
@@ -1132,75 +1100,48 @@ router.post("/chatwoot", async (req, res) => {
     const messageType = payload.message_type || payload.message?.message_type;
     const content = payload.content || payload.message?.content || "";
 
-    const isPrivate =
-      payload.private === true ||
-      payload.message?.private === true;
+    const isPrivate = payload.private === true || payload.message?.private === true;
 
-    // Ignoramos notas privadas.
-// Esto evita que las notas del bot en Chatwoot sean tomadas como mensajes del asesor.
-if (isPrivate) return;
-
-    // Solo procesamos mensajes creados
+    if (isPrivate) return;
     if (event && event !== "message_created") return;
 
-    // Si el mensaje es outgoing y NO es privado, significa que un asesor respondió desde Chatwoot.
-// En ese caso pausamos el bot para que no interrumpa la atención humana.
-if (messageType === "outgoing") {
-  const textoOutgoing = String(content || "").trim();
+    if (messageType === "outgoing") {
+      const textoOutgoing = String(content || "").trim();
 
-  // Evita que mensajes automáticos o notas del bot pausen otra vez el bot.
-  if (
-    textoOutgoing.includes("Respuesta del bot") ||
-    textoOutgoing.includes("asistente automático queda activo nuevamente") ||
-    textoOutgoing.includes("Como no hemos tenido actividad reciente del asesor")
-  ) {
-    console.log("⏭️ Outgoing ignorado porque parece mensaje automático del bot");
-    return;
-  }
+      if (
+        textoOutgoing.includes("Respuesta del bot") ||
+        textoOutgoing.includes("asistente automático queda activo nuevamente") ||
+        textoOutgoing.includes("Como no hemos tenido actividad reciente del asesor")
+      ) {
+        console.log("⏭️ Outgoing ignorado porque parece mensaje automático del bot");
+        return;
+      }
 
-  const sender =
-    payload.sender ||
-    payload.message?.sender ||
-    {};
+      const contact = payload.conversation?.contact || payload.contact || {};
 
-  const contact =
-    payload.conversation?.contact ||
-    payload.contact ||
-    {};
+      const phone =
+        contact.phone_number ||
+        payload.conversation?.meta?.sender?.phone_number ||
+        payload.conversation?.contact_inbox?.source_id ||
+        payload.contact_inbox?.source_id ||
+        "";
 
-  const phone =
-    contact.phone_number ||
-    payload.conversation?.meta?.sender?.phone_number ||
-    payload.conversation?.contact_inbox?.source_id ||
-    payload.contact_inbox?.source_id ||
-    "";
+      if (!phone) {
+        console.log("⚠️ Mensaje outgoing de Chatwoot sin teléfono");
+        return;
+      }
 
-  if (!phone) {
-    console.log("⚠️ Mensaje outgoing de Chatwoot sin teléfono");
-    return;
-  }
+      const from = phone.startsWith("whatsapp:")
+        ? phone
+        : `whatsapp:${phone.startsWith("+") ? phone : `+${phone}`}`;
 
-  const from = phone.startsWith("whatsapp:")
-    ? phone
-    : `whatsapp:${phone.startsWith("+") ? phone : `+${phone}`}`;
+      marcarAsesorActivo(from);
+      return;
+    }
 
-  marcarAsesorActivo(from);
-  return;
-}
-// Solo procesamos mensajes entrantes reales del cliente
-if (messageType !== "incoming") return;
-
-    // Ignoramos notas privadas
-    if (isPrivate) return;
-
-    // Ignoramos mensajes vacíos
+    if (messageType !== "incoming") return;
     if (!content || !String(content).trim()) return;
 
-    // ─────────────────────────────────────────────
-    // FILTRO IMPORTANTE POR INBOX
-    // Este bot CRC solo debe procesar mensajes del inbox configurado.
-    // Evita que mensajes del bot de Curso de Alimentos entren al bot CRC.
-    // ─────────────────────────────────────────────
     const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
 
     const payloadInboxId =
@@ -1240,11 +1181,7 @@ if (messageType !== "incoming") return;
       payload.contact ||
       {};
 
-    const contact =
-      payload.conversation?.contact ||
-      payload.contact ||
-      sender ||
-      {};
+    const contact = payload.conversation?.contact || payload.contact || sender || {};
 
     const phone =
       sender.phone_number ||
@@ -1270,15 +1207,15 @@ if (messageType !== "incoming") return;
     console.log("Inbox Chatwoot:", payloadInboxId);
 
     await procesarMensaje(from, text, {
-  source: "chatwoot",
-  skipChatwootIncomingLog: true,
-  messageId:
-    payload.id ||
-    payload.message?.id ||
-    payload.message_id ||
-    payload.content_attributes?.external_id ||
-    null,
-});
+      source: "chatwoot",
+      skipChatwootIncomingLog: true,
+      messageId:
+        payload.id ||
+        payload.message?.id ||
+        payload.message_id ||
+        payload.content_attributes?.external_id ||
+        null,
+    });
   } catch (error) {
     console.error("❌ Error webhook Chatwoot:", error.message);
   }
@@ -1286,6 +1223,7 @@ if (messageType !== "incoming") return;
 
 async function procesarMensaje(from, text, options = {}) {
   Stats.mensajeRecibido(from);
+
   if (esMensajeDuplicado(from, text, options)) {
     console.log("⏭️ Mensaje duplicado ignorado:", {
       from,
@@ -1303,159 +1241,161 @@ async function procesarMensaje(from, text, options = {}) {
   console.log("Usuario:", from);
   console.log("Fuente:", options.source || "direct");
   console.log("➡️ Paso actual:", session.step);
-  if (session.botPausadoPorAsesor) {
-  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-    await responder(from, menuPrincipal());
-    return;
-  }
 
-  if (asesorSigueActivo(session)) {
-    console.log("👤 Bot pausado porque el asesor está activo:", from);
-    return;
-  }
-
-  await reactivarBotPorInactividad(from, session);
-  return;
-}
-
-  if (isRateLimited(from, session.step)) {
-  Stats.rateLimitado(from);
-  await responder(from, "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento.");
-  return;
-}
-  }
-
-  // Si el usuario está con asesor, el bot NO debe responder automático.
-  // Solo se reinicia si escribe explícitamente menu, menú, inicio o volver.
-  if (session.step === "HUMANO") {
-  // Si el usuario pide volver al bot, se reactiva inmediatamente.
-  if (["menu", "menú", "inicio", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, {
-      step: "MENU_PRINCIPAL",
-      linea: "CRC",
-      necesitaAsesor: false,
-      asesorActivo: false,
-      botPausadoPorAsesor: false,
-      asesorLastAt: null,
-      avisoReactivacionBotEnviado: false,
+  if (!options.skipChatwootIncomingLog) {
+    await logIncomingMessage(from, text).catch((error) => {
+      console.error("⚠️ No se pudo registrar incoming en Chatwoot:", error.message);
     });
-
-    await responder(from, menuPrincipal());
-    return;
   }
 
-  // Si ya pasaron los 10 minutos, reactivamos el bot.
-  if (session.botPausadoPorAsesor && !asesorSigueActivo(session)) {
+  if (session.botPausadoPorAsesor) {
+    if (["menu", "menú", "inicio", "volver"].includes(msg)) {
+      resetSession(from);
+      updateSession(from, {
+        step: "MENU_PRINCIPAL",
+        linea: "CRC",
+        necesitaAsesor: false,
+        asesorActivo: false,
+        botPausadoPorAsesor: false,
+        asesorLastAt: null,
+        avisoReactivacionBotEnviado: false,
+      });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    if (asesorSigueActivo(session)) {
+      console.log("👤 Bot pausado porque el asesor está activo:", from);
+      return;
+    }
+
     await reactivarBotPorInactividad(from, session);
     return;
   }
 
-  const asesorDisponible = esHorarioAsesorDisponible();
-
-  updateSession(from, {
-    asesorDisponible,
-  });
-
-  console.log(
-    "🔔 Usuario en modo asesor:",
-    from,
-    asesorDisponible
-      ? "Usuario respondió en modo asesor dentro del horario disponible"
-      : "Usuario respondió en modo asesor fuera del horario disponible"
-  );
-
-  // Si sigue dentro de los 10 minutos, el bot no responde.
-  return;
-}
-
-  // Si el usuario pide asesor en cualquier momento
-if (esSolicitudAsesor(msg)) {
-  Stats.asesorActivado(from, motivo);
-  await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
-  return;
-}
-
-  if (session.step === "FAQ_CONTINUAR") {
-  const returnStep = session.faqReturnStep || "MENU_PRINCIPAL";
-
-  if (esRespuestaSi(msg)) {
-    updateSession(from, {
-      step: returnStep,
-      faqReturnStep: null,
-      faqPreguntaRespondida: null,
-    });
-
-    const sessionActualizada = getSession(from);
-
+  if (isRateLimited(from, session.step)) {
+    Stats.rateLimitado(from);
     await responder(
       from,
-      `Perfecto ✅ continuemos.
+      "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
+    );
+    return;
+  }
 
-${preguntaActualPorStep(sessionActualizada)}`
+  if (session.step === "HUMANO") {
+    if (["menu", "menú", "inicio", "volver"].includes(msg)) {
+      resetSession(from);
+      updateSession(from, {
+        step: "MENU_PRINCIPAL",
+        linea: "CRC",
+        necesitaAsesor: false,
+        asesorActivo: false,
+        botPausadoPorAsesor: false,
+        asesorLastAt: null,
+        avisoReactivacionBotEnviado: false,
+      });
+
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    if (session.botPausadoPorAsesor && !asesorSigueActivo(session)) {
+      await reactivarBotPorInactividad(from, session);
+      return;
+    }
+
+    const asesorDisponible = esHorarioAsesorDisponible();
+
+    updateSession(from, {
+      asesorDisponible,
+    });
+
+    console.log(
+      "🔔 Usuario en modo asesor:",
+      from,
+      asesorDisponible
+        ? "Usuario respondió en modo asesor dentro del horario disponible"
+        : "Usuario respondió en modo asesor fuera del horario disponible"
     );
 
     return;
   }
 
-  if (esRespuestaNo(msg)) {
+  if (esSolicitudAsesor(msg)) {
+    await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
+    return;
+  }
+
+  if (session.step === "FAQ_CONTINUAR") {
+    const returnStep = session.faqReturnStep || "MENU_PRINCIPAL";
+
+    if (esRespuestaSi(msg)) {
+      updateSession(from, {
+        step: returnStep,
+        faqReturnStep: null,
+        faqPreguntaRespondida: null,
+      });
+
+      const sessionActualizada = getSession(from);
+
+      await responder(
+        from,
+        `Perfecto ✅ continuemos.
+
+${preguntaActualPorStep(sessionActualizada)}`
+      );
+
+      return;
+    }
+
+    if (esRespuestaNo(msg)) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    await responder(
+      from,
+      `Por favor responde:
+
+1️⃣ Sí, continuar
+2️⃣ No, volver al menú`
+    );
+
+    return;
+  }
+
+  if (await manejarPreguntaRapida(from, msg, session)) {
+    return;
+  }
+
+  if (esIntencionCia(msg)) {
+    updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+    await responder(from, menuCia());
+    return;
+  }
+
+  if (esIntencionCrc(msg)) {
     resetSession(from);
     updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
     await responder(from, menuPrincipal());
     return;
   }
 
-  await responder(
-    from,
-    `Por favor responde:
+  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
+    return;
+  }
 
-1️⃣ Sí, continuar
-2️⃣ No, volver al menú`
-  );
-
-  return;
-}
-
-if (await manejarPreguntaRapida(from, msg, session)) {
-  return;
-}
-
-// Si escribe algo relacionado con comparendos/SIMIT, entra a CIA.
-// OJO: NO usamos msg.includes("cia") porque "licencia" contiene "cia".
-if (esIntencionCia(msg)) {
-  updateSession(from, { step: "CIA_MENU", linea: "CIA" });
-  await responder(from, menuCia());
-  return;
-}
-
-// Si escribe algo relacionado con licencia, cita, renovar, examen, etc.
-// entra directo al menú CRC.
-if (esIntencionCrc(msg)) {
-  resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-  await responder(from, menuPrincipal());
-  return;
-}
-
-// Saludos o menú también van directo a CRC.
-if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
-  resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-  await responder(from, menuPrincipal());
-  return;
-}
-
-if (session.step === "MENU_INICIAL") {
-  resetSession(from);
-  updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-  await responder(from, menuPrincipal());
-  return;
-}
-  // ─────────────────────────────────────────────
-  // FLUJO CIA VIP / SIMIT
-  // ─────────────────────────────────────────────
+  if (session.step === "MENU_INICIAL") {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    await responder(from, menuPrincipal());
+    return;
+  }
 
   if (session.step === "CIA_MENU") {
     if (msg === "1") {
@@ -1510,6 +1450,7 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
     try {
       const resultado = await consultarSimitPorDocumento(documento);
       Stats.simitConsultado(from, documento, "ok");
+
       const respuesta = formatearResultadoSimitWhatsApp(documento, resultado);
 
       if (Array.isArray(respuesta)) {
@@ -1527,7 +1468,8 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
       });
     } catch (error) {
       console.error("❌ Error SIMIT:", error.message);
-      Stats.simitConsultado(from, documento, "ok");
+      Stats.simitConsultado(from, documento, "error");
+
       await responder(
         from,
         "⚠️ En este momento no fue posible consultar SIMIT.\nPor favor intenta más tarde o escribe *asesor*."
@@ -1539,19 +1481,22 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
   if (session.step === "CIA_FINAL") {
     if (
-  msg === "1" ||
-  msg.includes("asesor") ||
-  msg.includes("si") ||
-  msg.includes("sí")
-) {
-  await transferirAAsesor(from, "Usuario solicitó asesor desde flujo CIA / SIMIT");
-  return;
-}
+      msg === "1" ||
+      msg.includes("asesor") ||
+      msg.includes("si") ||
+      msg.includes("sí")
+    ) {
+      await transferirAAsesor(
+        from,
+        "Usuario solicitó asesor desde flujo CIA / SIMIT"
+      );
+      return;
+    }
 
     if (msg === "2" || msg.includes("volver") || msg.includes("menu")) {
       resetSession(from);
-updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-await responder(from, menuPrincipal());
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
       return;
     }
 
@@ -1564,10 +1509,6 @@ await responder(from, menuPrincipal());
     );
     return;
   }
-
-  // ─────────────────────────────────────────────
-  // FLUJO CRC
-  // ─────────────────────────────────────────────
 
   if (session.step === "MENU_PRINCIPAL") {
     if (msg === "1") {
@@ -1583,55 +1524,60 @@ await responder(from, menuPrincipal());
     }
 
     if (msg === "3" || msg.includes("asesor")) {
-  await transferirAAsesor(from, "Usuario eligió hablar con asesor desde menú principal CRC");
-  return;
-}
+      await transferirAAsesor(
+        from,
+        "Usuario eligió hablar con asesor desde menú principal CRC"
+      );
+      return;
+    }
 
     await responder(from, menuPrincipal());
     return;
   }
-if (session.step === "MENU_TRAMITE") {
-  if (msg === "1") {
-  updateSession(from, {
-    tramite: "Renovación / Refrendación",
-    comparendos: "No preguntado",
-    step: "CEDULA",
-  });
 
-  await responder(
-    from,
-    `Perfecto ✅
+  if (session.step === "MENU_TRAMITE") {
+    if (msg === "1") {
+      updateSession(from, {
+        tramite: "Renovación / Refrendación",
+        comparendos: "No preguntado",
+        step: "CEDULA",
+      });
+
+      await responder(
+        from,
+        `Perfecto ✅
 
 Vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
 
 Por favor envíame tu número de cédula sin puntos ni espacios.`
-  );
+      );
 
-  return;
-}
+      return;
+    }
 
-   if (msg === "2") {
-  updateSession(from, {
-    tramite: "Primera vez",
-    comparendos: "No preguntado",
-    step: "CEDULA",
-  });
+    if (msg === "2") {
+      updateSession(from, {
+        tramite: "Primera vez",
+        comparendos: "No preguntado",
+        step: "CEDULA",
+      });
 
-  await responder(
-    from,
-    `Perfecto ✅
+      await responder(
+        from,
+        `Perfecto ✅
 
 Vamos a revisar tu información en RUNT para orientarte con el trámite correcto.
 
 Por favor envíame tu número de cédula sin puntos ni espacios.`
-  );
+      );
 
-  return;
-}
+      return;
+    }
+
     if (msg === "3") {
-     resetSession(from);
-updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-await responder(from, menuPrincipal());
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
       return;
     }
 
@@ -1678,18 +1624,14 @@ await responder(from, menuPrincipal());
 
     if (msg === "7") {
       resetSession(from);
-updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-await responder(from, menuPrincipal());
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
       return;
     }
 
     await responder(from, menuInformacion());
     return;
   }
-
-  // ─────────────────────────────────────────────
-  // COMPARENDOS ANTES DE RUNT
-  // ─────────────────────────────────────────────
 
   if (session.step === "COMPARENDO") {
     let comparendos = null;
@@ -1811,6 +1753,8 @@ Por favor envíame tu número de cédula sin puntos ni espacios.`
 
     try {
       const resultadoSimit = await consultarSimitPorDocumento(documento);
+      Stats.simitConsultado(from, documento, "ok");
+
       const respuestaSimit = formatearResultadoSimitWhatsApp(
         documento,
         resultadoSimit
@@ -1855,10 +1799,10 @@ Ahora vamos a continuar revisando tu información en RUNT para validar el estado
       );
 
       await consultarRuntYContinuar(from, documento);
-      Stats.runtConsultado(from, cedula, "ok");
       return;
     } catch (error) {
       console.error("❌ Error SIMIT:", error.message);
+      Stats.simitConsultado(from, documento, "error");
 
       await responder(
         from,
@@ -1870,24 +1814,26 @@ Recuerda que si tienes comparendos o multas pendientes, el trámite final de la 
       );
 
       await consultarRuntYContinuar(from, documento);
-      Stats.runtConsultado(from, cedula, "ok");
       return;
     }
   }
 
   if (session.step === "SIMIT_DECISION_CRC") {
     if (
-  msg === "1" ||
-  msg.includes("asesor") ||
-  msg.includes("comparendo") ||
-  msg.includes("comparendos") ||
-  msg.includes("multa") ||
-  msg.includes("simit") ||
-  msg.includes("ayuda")
-) {
-  await transferirAAsesor(from, "Usuario solicitó asesor por comparendos / SIMIT desde flujo CRC");
-  return;
-}
+      msg === "1" ||
+      msg.includes("asesor") ||
+      msg.includes("comparendo") ||
+      msg.includes("comparendos") ||
+      msg.includes("multa") ||
+      msg.includes("simit") ||
+      msg.includes("ayuda")
+    ) {
+      await transferirAAsesor(
+        from,
+        "Usuario solicitó asesor por comparendos / SIMIT desde flujo CRC"
+      );
+      return;
+    }
 
     if (
       msg === "2" ||
@@ -1924,7 +1870,6 @@ De todas formas, vamos a revisar tu información en RUNT.`
       );
 
       await consultarRuntYContinuar(from, cedula);
-      Stats.runtConsultado(from, cedula, "ok");
       return;
     }
 
@@ -1938,10 +1883,6 @@ De todas formas, vamos a revisar tu información en RUNT.`
     return;
   }
 
-  // ─────────────────────────────────────────────
-  // FLUJO RUNT NORMAL
-  // ─────────────────────────────────────────────
-
   if (session.step === "CEDULA") {
     if (!esCedulaValida(text)) {
       await responder(
@@ -1952,71 +1893,70 @@ De todas formas, vamos a revisar tu información en RUNT.`
     }
 
     await consultarRuntYContinuar(from, text);
-    Stats.runtConsultado(from, cedula, "ok");
     return;
   }
 
   if (session.step === "AGENDAR") {
-  if (
-    msg === "1" ||
-    msg.includes("si") ||
-    msg.includes("sí") ||
-    msg.includes("agendar") ||
-    msg.includes("cita") ||
-    msg.includes("quiero")
-  ) {
-    updateSession(from, {
-  step: "DIA_CITA",
-});
+    if (
+      msg === "1" ||
+      msg.includes("si") ||
+      msg.includes("sí") ||
+      msg.includes("agendar") ||
+      msg.includes("cita") ||
+      msg.includes("quiero")
+    ) {
+      updateSession(from, {
+        step: "DIA_CITA",
+      });
 
-await responder(from, menuDiasCita());
-return;
-  }
+      await responder(from, menuDiasCita());
+      return;
+    }
 
-  if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
-    resetSession(from);
-updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-await responder(from, menuPrincipal());
+    if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      await responder(from, menuPrincipal());
+
+      await responder(
+        from,
+        `Entendido ✅
+
+Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
+      );
+
+      await responder(from, menuInicial());
+      return;
+    }
 
     await responder(
       from,
-      `Entendido ✅
-
-Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
-    );
-
-    await responder(from, menuInicial());
-    return;
-  }
-
-  await responder(
-    from,
-    `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
+      `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
 
 1️⃣ Sí, quiero agendar
 2️⃣ No por ahora`
-  );
-  return;
-}
-
-if (session.step === "DIA_CITA") {
-  const dia = detectarDia(msg);
-
-  if (!dia) {
-    await responder(from, menuDiasCita());
+    );
     return;
   }
 
-  if (dia.tipo === "otro") {
-    updateSession(from, {
-      diaCita: "Otro día",
-      fechaCitaISO: null,
-      step: "DIA_PERSONALIZADO",
-    });
+  if (session.step === "DIA_CITA") {
+    const dia = detectarDia(msg);
 
-    await responder(
-      from,
-      `Perfecto ✅
+    if (!dia) {
+      await responder(from, menuDiasCita());
+      return;
+    }
+
+    if (dia.tipo === "otro") {
+      updateSession(from, {
+        diaCita: "Otro día",
+        fechaCitaISO: null,
+        step: "DIA_PERSONALIZADO",
+      });
+
+      await responder(
+        from,
+        `Perfecto ✅
 
 Indícanos qué día deseas asistir.
 
@@ -2025,98 +1965,98 @@ Ejemplo:
 *lunes 11 de mayo de 2026*
 *15 de mayo de 2026*
 *la otra semana*`
-    );
+      );
+      return;
+    }
+
+    let fechaSeleccionada = dia.fecha;
+
+    if (!esDiaLaboralCRC(fechaSeleccionada)) {
+      const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
+
+      updateSession(from, {
+        diaCita: formatearFechaColombia(siguiente),
+        fechaCitaISO: fechaKey(siguiente),
+        step: "HORARIO_CITA",
+      });
+
+      await responder(
+        from,
+        `Ese día no tenemos atención porque es domingo o festivo.
+
+Te puedo ofrecer el siguiente día hábil:
+
+📅 *${formatearFechaColombia(siguiente)}*`
+      );
+
+      await responder(from, menuHorariosCita(siguiente));
+      return;
+    }
+
+    let slots = obtenerSlotsDisponibles(fechaSeleccionada);
+
+    if (slots.length === 0) {
+      const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
+
+      updateSession(from, {
+        diaCita: formatearFechaColombia(siguiente),
+        fechaCitaISO: fechaKey(siguiente),
+        step: "HORARIO_CITA",
+      });
+
+      await responder(
+        from,
+        `Para el día de hoy ya no tenemos disponibilidad.
+
+Te puedo ofrecer el siguiente día hábil:
+
+📅 *${formatearFechaColombia(siguiente)}*`
+      );
+
+      await responder(from, menuHorariosCita(siguiente));
+      return;
+    }
+
+    updateSession(from, {
+      diaCita: dia.texto,
+      fechaCitaISO: fechaKey(fechaSeleccionada),
+      step: "HORARIO_CITA",
+    });
+
+    await responder(from, menuHorariosCita(fechaSeleccionada));
     return;
   }
 
-  let fechaSeleccionada = dia.fecha;
+  if (session.step === "DIA_PERSONALIZADO") {
+    const diaPersonalizado = text.trim();
 
-  if (!esDiaLaboralCRC(fechaSeleccionada)) {
-    const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
+    if (diaPersonalizado.length < 3) {
+      await responder(
+        from,
+        "Por favor indícanos un día más claro. Ejemplo: *viernes 8 de mayo de 2026*, *lunes* o *15 de mayo*."
+      );
+      return;
+    }
 
     updateSession(from, {
-      diaCita: formatearFechaColombia(siguiente),
-      fechaCitaISO: fechaKey(siguiente),
+      diaCita: diaPersonalizado,
+      fechaCitaISO: null,
       step: "HORARIO_CITA",
     });
 
     await responder(
       from,
-      `Ese día no tenemos atención porque es domingo o festivo.
-
-Te puedo ofrecer el siguiente día hábil:
-
-📅 *${formatearFechaColombia(siguiente)}*`
-    );
-
-    await responder(from, menuHorariosCita(siguiente));
-    return;
-  }
-
-  let slots = obtenerSlotsDisponibles(fechaSeleccionada);
-
-  if (slots.length === 0) {
-    const siguiente = obtenerSiguienteDiaLaboral(sumarDias(fechaSeleccionada, 1));
-
-    updateSession(from, {
-      diaCita: formatearFechaColombia(siguiente),
-      fechaCitaISO: fechaKey(siguiente),
-      step: "HORARIO_CITA",
-    });
-
-    await responder(
-      from,
-      `Para el día de hoy ya no tenemos disponibilidad.
-
-Te puedo ofrecer el siguiente día hábil:
-
-📅 *${formatearFechaColombia(siguiente)}*`
-    );
-
-    await responder(from, menuHorariosCita(siguiente));
-    return;
-  }
-
-  updateSession(from, {
-    diaCita: dia.texto,
-    fechaCitaISO: fechaKey(fechaSeleccionada),
-    step: "HORARIO_CITA",
-  });
-
-  await responder(from, menuHorariosCita(fechaSeleccionada));
-  return;
-}
-
-if (session.step === "DIA_PERSONALIZADO") {
-  const diaPersonalizado = text.trim();
-
-  if (diaPersonalizado.length < 3) {
-    await responder(
-      from,
-      "Por favor indícanos un día más claro. Ejemplo: *viernes 8 de mayo de 2026*, *lunes* o *15 de mayo*."
-    );
-    return;
-  }
-
-  updateSession(from, {
-    diaCita: diaPersonalizado,
-    fechaCitaISO: null,
-    step: "HORARIO_CITA",
-  });
-
-  await responder(
-    from,
-    `Listo ✅
+      `Listo ✅
 
 Día solicitado:
 📅 *${diaPersonalizado}*
 
 Ahora elige un horario aproximado de llegada.`
-  );
+    );
 
-  await responder(
-    from,
-    `Horarios disponibles habituales:
+    await responder(
+      from,
+      `Horarios disponibles habituales:
 
 1️⃣ 7:00 a.m. a 9:00 a.m.
 2️⃣ 9:00 a.m. a 11:00 a.m.
@@ -2128,46 +2068,46 @@ Recuerda:
 Lunes a viernes: 7:00 a.m. a 3:30 p.m.
 Sábados: 7:00 a.m. a 11:00 a.m.
 Domingos y festivos: no laboramos.`
-  );
-  return;
-}
-  
-if (session.step === "HORARIO_CITA") {
-  const fechaCita = session.fechaCitaISO
-    ? new Date(`${session.fechaCitaISO}T12:00:00-05:00`)
-    : null;
+    );
+    return;
+  }
 
-  const horario = session.fechaCitaISO
-    ? detectarHorario(msg, fechaCita)
-    : detectarHorario(msg, null);
+  if (session.step === "HORARIO_CITA") {
+    const fechaCita = session.fechaCitaISO
+      ? new Date(`${session.fechaCitaISO}T12:00:00-05:00`)
+      : null;
 
-  if (!horario) {
-    if (session.fechaCitaISO) {
-      await responder(from, menuHorariosCita(fechaCita));
-    } else {
-      await responder(
-        from,
-        `Por favor responde con una opción válida:
+    const horario = session.fechaCitaISO
+      ? detectarHorario(msg, fechaCita)
+      : detectarHorario(msg, null);
+
+    if (!horario) {
+      if (session.fechaCitaISO) {
+        await responder(from, menuHorariosCita(fechaCita));
+      } else {
+        await responder(
+          from,
+          `Por favor responde con una opción válida:
 
 1️⃣ 7:00 a.m. a 9:00 a.m.
 2️⃣ 9:00 a.m. a 11:00 a.m.
 3️⃣ 11:00 a.m. a 1:00 p.m.
 4️⃣ 1:00 p.m. a 3:30 p.m.
 5️⃣ Otro horario`
-      );
+        );
+      }
+      return;
     }
-    return;
-  }
 
-  updateSession(from, {
-    step: "NOMBRE_CITA",
-    horarioCita: horario,
-  });
+    updateSession(from, {
+      step: "NOMBRE_CITA",
+      horarioCita: horario,
+    });
 
-  if (horario === "Otro horario") {
-    await responder(
-      from,
-      `Perfecto ✅
+    if (horario === "Otro horario") {
+      await responder(
+        from,
+        `Perfecto ✅
 
 Indícanos el horario aproximado que prefieres.
 
@@ -2175,18 +2115,18 @@ Ejemplo:
 *10:00 a.m.*
 *Después de las 2:00 p.m.*
 *En la mañana*`
-    );
+      );
 
-    updateSession(from, {
-      step: "HORARIO_PERSONALIZADO",
-    });
+      updateSession(from, {
+        step: "HORARIO_PERSONALIZADO",
+      });
 
-    return;
-  }
+      return;
+    }
 
-  await responder(
-    from,
-    `Perfecto ✅
+    await responder(
+      from,
+      `Perfecto ✅
 
 Día seleccionado:
 📅 *${session.diaCita || "Día por confirmar"}*
@@ -2195,142 +2135,136 @@ Horario seleccionado:
 ⏰ *${horario}*
 
 Ahora envíame tu *nombre completo*.`
-  );
-  return;
-}
-
-if (session.step === "HORARIO_PERSONALIZADO") {
-  const horarioPersonalizado = text.trim();
-
-  if (horarioPersonalizado.length < 4) {
-    await responder(
-      from,
-      "Por favor indícanos un horario aproximado más claro."
     );
     return;
   }
 
-  updateSession(from, {
-    step: "NOMBRE_CITA",
-    horarioCita: horarioPersonalizado,
-  });
+  if (session.step === "HORARIO_PERSONALIZADO") {
+    const horarioPersonalizado = text.trim();
 
-  await responder(
-    from,
-    `Listo ✅
+    if (horarioPersonalizado.length < 4) {
+      await responder(from, "Por favor indícanos un horario aproximado más claro.");
+      return;
+    }
+
+    updateSession(from, {
+      step: "NOMBRE_CITA",
+      horarioCita: horarioPersonalizado,
+    });
+
+    await responder(
+      from,
+      `Listo ✅
 
 Horario solicitado:
 ⏰ *${horarioPersonalizado}*
 
 Ahora envíame tu *nombre completo*.`
-  );
-  return;
-}
-
-if (session.step === "NOMBRE_CITA") {
-  const nombre = text.trim();
-
-  if (nombre.length < 5 || !nombre.includes(" ")) {
-    await responder(
-      from,
-      "Por favor envíame tu *nombre completo*, con nombre y apellido."
     );
     return;
   }
 
-  updateSession(from, {
-    step: "CEDULA_CITA",
-    nombreCita: nombre,
-  });
+  if (session.step === "NOMBRE_CITA") {
+    const nombre = text.trim();
 
-  await responder(
-    from,
-    `Gracias, *${nombre}* ✅
+    if (nombre.length < 5 || !nombre.includes(" ")) {
+      await responder(
+        from,
+        "Por favor envíame tu *nombre completo*, con nombre y apellido."
+      );
+      return;
+    }
+
+    updateSession(from, {
+      step: "CEDULA_CITA",
+      nombreCita: nombre,
+    });
+
+    await responder(
+      from,
+      `Gracias, *${nombre}* ✅
 
 Ahora envíame tu *número de cédula*, sin puntos ni espacios.`
-  );
-  return;
-}
-
-if (session.step === "CEDULA_CITA") {
-  const cedula = text.replace(/\D/g, "");
-
-  if (!esCedulaValida(cedula)) {
-    await responder(
-      from,
-      "⚠️ Por favor envía una cédula válida, solo números, sin puntos ni espacios."
     );
     return;
   }
 
-  updateSession(from, {
-    step: "TELEFONO_CITA",
-    cedulaCita: cedula,
-  });
+  if (session.step === "CEDULA_CITA") {
+    const cedula = text.replace(/\D/g, "");
 
-  await responder(
-    from,
-    `Perfecto ✅
+    if (!esCedulaValida(cedula)) {
+      await responder(
+        from,
+        "⚠️ Por favor envía una cédula válida, solo números, sin puntos ni espacios."
+      );
+      return;
+    }
+
+    updateSession(from, {
+      step: "TELEFONO_CITA",
+      cedulaCita: cedula,
+    });
+
+    await responder(
+      from,
+      `Perfecto ✅
 
 Ahora envíame tu *número de teléfono de contacto*.`
-  );
-  return;
-}
-
-if (session.step === "TELEFONO_CITA") {
-  const telefono = text.replace(/\D/g, "");
-
-  if (!esTelefonoValido(telefono)) {
-    await responder(
-      from,
-      "⚠️ Por favor envía un número de teléfono válido."
     );
     return;
   }
 
-  updateSession(from, {
-    step: "CORREO_CITA",
-    telefonoCita: telefono,
-  });
+  if (session.step === "TELEFONO_CITA") {
+    const telefono = text.replace(/\D/g, "");
 
-  await responder(
-    from,
-    `Gracias ✅
+    if (!esTelefonoValido(telefono)) {
+      await responder(from, "⚠️ Por favor envía un número de teléfono válido.");
+      return;
+    }
+
+    updateSession(from, {
+      step: "CORREO_CITA",
+      telefonoCita: telefono,
+    });
+
+    await responder(
+      from,
+      `Gracias ✅
 
 Ahora envíame tu *correo electrónico* para enviarte la confirmación de la cita.`
-  );
-  return;
-}
-
-if (session.step === "CORREO_CITA") {
-  const correo = text.trim().toLowerCase();
-
-  if (!esCorreoValido(correo)) {
-    await responder(
-      from,
-      "⚠️ Por favor envía un correo válido.\n\nEjemplo: nombre@gmail.com"
     );
     return;
   }
 
-  updateSession(from, {
-    step: "CONFIRMAR_CITA",
-    correoCita: correo,
-  });
+  if (session.step === "CORREO_CITA") {
+    const correo = text.trim().toLowerCase();
 
-  const datos = {
-  nombre: session.nombreCita,
-  cedula: session.cedulaCita || session.cedula,
-  telefono: session.telefonoCita,
-  correo,
-  dia: session.diaCita || "Día por confirmar",
-  horario: session.horarioCita || "Horario por confirmar",
-  tramite: session.tramite || "Licencia de conducción",
-};
+    if (!esCorreoValido(correo)) {
+      await responder(
+        from,
+        "⚠️ Por favor envía un correo válido.\n\nEjemplo: nombre@gmail.com"
+      );
+      return;
+    }
 
-  await responder(
-    from,
-    `Por favor confirma que los datos estén correctos:
+    updateSession(from, {
+      step: "CONFIRMAR_CITA",
+      correoCita: correo,
+    });
+
+    const datos = {
+      nombre: session.nombreCita,
+      cedula: session.cedulaCita || session.cedula,
+      telefono: session.telefonoCita,
+      correo,
+      dia: session.diaCita || "Día por confirmar",
+      horario: session.horarioCita || "Horario por confirmar",
+      tramite: session.tramite || "Licencia de conducción",
+    };
+
+    await responder(
+      from,
+      `Por favor confirma que los datos estén correctos:
 
 👤 Nombre: *${datos.nombre}*
 🪪 Cédula: *${datos.cedula}*
@@ -2342,92 +2276,94 @@ if (session.step === "CORREO_CITA") {
 
 1️⃣ Confirmar cita
 2️⃣ Corregir datos`
-  );
-  return;
-}
-
-if (session.step === "ENVIANDO_CORREO_CITA") {
-  await responder(
-    from,
-    "Estamos procesando tu confirmación y enviando el correo ✅\nPor favor espera un momento."
-  );
-  return;
-}
-  
-if (session.step === "CONFIRMAR_CITA") {
-  if (
-    msg === "2" ||
-    msg.includes("corregir") ||
-    msg.includes("editar") ||
-    msg.includes("cambiar")
-  ) {
-    updateSession(from, {
-  step: "DIA_CITA",
-  diaCita: null,
-  fechaCitaISO: null,
-  horarioCita: null,
-  nombreCita: null,
-  cedulaCita: null,
-  telefonoCita: null,
-  correoCita: null,
-});
-
-    await responder(
-      from,
-      `Sin problema ✅
-
-Vamos a tomar los datos nuevamente.`
     );
-
-    await responder(from, menuDiasCita());
     return;
   }
 
-  if (
-    msg !== "1" &&
-    !msg.includes("confirmar") &&
-    !msg.includes("si") &&
-    !msg.includes("sí") &&
-    !msg.includes("correcto")
-  ) {
+  if (session.step === "ENVIANDO_CORREO_CITA") {
     await responder(
       from,
-      `Por favor responde:
+      "Estamos procesando tu confirmación y enviando el correo ✅\nPor favor espera un momento."
+    );
+    return;
+  }
+
+  if (session.step === "CONFIRMAR_CITA") {
+    if (
+      msg === "2" ||
+      msg.includes("corregir") ||
+      msg.includes("editar") ||
+      msg.includes("cambiar")
+    ) {
+      updateSession(from, {
+        step: "DIA_CITA",
+        diaCita: null,
+        fechaCitaISO: null,
+        horarioCita: null,
+        nombreCita: null,
+        cedulaCita: null,
+        telefonoCita: null,
+        correoCita: null,
+      });
+
+      await responder(
+        from,
+        `Sin problema ✅
+
+Vamos a tomar los datos nuevamente.`
+      );
+
+      await responder(from, menuDiasCita());
+      return;
+    }
+
+    if (
+      msg !== "1" &&
+      !msg.includes("confirmar") &&
+      !msg.includes("si") &&
+      !msg.includes("sí") &&
+      !msg.includes("correcto")
+    ) {
+      await responder(
+        from,
+        `Por favor responde:
 
 1️⃣ Confirmar cita
 2️⃣ Corregir datos`
-    );
-    return;
-  }
+      );
+      return;
+    }
 
-  const datos = {
-  nombre: session.nombreCita,
-  cedula: session.cedulaCita || session.cedula,
-  telefono: session.telefonoCita,
-  correo: session.correoCita,
-  dia: session.diaCita || "Día por confirmar",
-  horario: session.horarioCita || "Horario por confirmar",
-  tramite: session.tramite || "Licencia de conducción",
-};
-
-  await responder(
-    from,
-    "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
-  );
-  updateSession(from, {
-  step: "ENVIANDO_CORREO_CITA",
-});
-
-  try {
-    await enviarCorreoCita(datos);
-
-    await responder(from, resumenCita(datos));
-  } catch (error) {
-    console.error("❌ Error enviando correo:", error.message);
+    const datos = {
+      nombre: session.nombreCita,
+      cedula: session.cedulaCita || session.cedula,
+      telefono: session.telefonoCita,
+      correo: session.correoCita,
+      dia: session.diaCita || "Día por confirmar",
+      horario: session.horarioCita || "Horario por confirmar",
+      tramite: session.tramite || "Licencia de conducción",
+    };
 
     await responder(
       from,
-      `✅ *Solicitud de cita recibida*
+      "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
+    );
+
+    updateSession(from, {
+      step: "ENVIANDO_CORREO_CITA",
+    });
+
+    try {
+      await enviarCorreoCita(datos);
+      Stats.citaPreconfirmada(from, datos.nombre || "usuario");
+
+      await responder(from, resumenCita(datos));
+    } catch (error) {
+      console.error("❌ Error enviando correo:", error.message);
+
+      await responder(
+        from,
+        `✅ *Solicitud de cita recibida*
 
 Tus datos quedaron registrados en esta conversación, pero en este momento no fue posible enviar el correo automático.
 
@@ -2440,12 +2376,12 @@ Tus datos quedaron registrados en esta conversación, pero en este momento no fu
 ⏰ Horario: *${datos.horario}*
 
 Un asesor continuará con la confirmación final.`
-    );
-  }
+      );
+    }
 
-  resetSession(from);
-  return;
-}
+    resetSession(from);
+    return;
+  }
 
   if (session.step === "DATOS_CITA") {
     const horario = session.horarioCita || "Horario por confirmar";
@@ -2466,6 +2402,8 @@ Recuerda traer tu documento físico original.`
     resetSession(from);
     return;
   }
+
+  Stats.mensajeNoReconocido(from, text);
 
   resetSession(from);
   updateSession(from, { step: "MENU_INICIAL" });
@@ -2512,21 +2450,21 @@ function menuInformacion() {
 2️⃣ Duración del proceso
 3️⃣ Horarios de atención
 4️⃣ Medios de pago
-5️⃣ Proceso del examen
+5️⃣ Proceso paso a paso
 6️⃣ Ubicación
 7️⃣ Volver al menú principal`;
 }
 
 function menuInformacionCorto() {
-  return `¿Deseas consultar algo más?
+  return `¿Deseas consultar otra información?
 
 1️⃣ Precios y descuentos
 2️⃣ Duración del proceso
-3️⃣ Horarios
+3️⃣ Horarios de atención
 4️⃣ Medios de pago
-5️⃣ Proceso del examen
+5️⃣ Proceso paso a paso
 6️⃣ Ubicación
-7️⃣ Volver al inicio`;
+7️⃣ Volver al menú principal`;
 }
 
 module.exports = router;
