@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Vip - CRC Dashboard</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="https://vip-mediconecta.app/tenant-logo.png" />
+  <link rel="apple-touch-icon" href="https://vip-mediconecta.app/tenant-logo.png" />
+
+  <!-- Open Graph / WhatsApp / Facebook -->
+  <meta property="og:locale" content="es_CO" />
+  <meta property="og:title" content="Bot CRC VIP" />
+  <meta property="og:description" content="Dashboard y estadísticas del bot CRC VIP. Consulta actividad, RUNT, SIMIT, citas y seguimiento en tiempo real." />
+  <meta property="og:image" content="https://vip-mediconecta.app/tenant-logo.png" />
+  <meta property="og:image:secure_url" content="https://vip-mediconecta.app/tenant-logo.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://bot-whatsapp-crc-vip.onrender.com/" />
+  <meta property="og:site_name" content="Vip Salud Ocupacional" />
+  
+
+  <!-- Twitter/X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Bot CRC VIP" />
+  <meta name="twitter:description" content="Dashboard y estadísticas del bot de VIP Salud Ocupacional." />
+  <meta name="twitter:image" content="https://vip-mediconecta.app/tenant-logo.png" />
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <link rel="stylesheet" href="/public/css/dashboard.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-icon logo-img-wrap">
+          <img src="https://vip-mediconecta.app/tenant-logo.png" alt="Logo VIP" class="brand-logo-img">
+        </div>
+
+        <div>
+          <div class="brand-title">Bot CRC VIP</div>
+          <div class="brand-sub">VIP CRC Galerías · Dashboard con filtros</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <span class="uptime-text">Uptime: <strong id="uptimeVal">—</strong></span>
+
+        <div class="badge-live">
+          <span class="dot"></span>
+          En vivo
+        </div>
+
+        <button class="btn" onclick="toggleTheme()" id="themeBtn">
+          <i class="ti ti-sun"></i> Modo claro
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="section-label">Filtros de búsqueda</div>
+
+    <section class="filter-card">
+      <div class="filter-grid">
+        <div class="field">
+          <label>Buscar por número, palabra o evento</label>
+          <input id="qInput" class="input" placeholder="Ej: 573212340504, runt, simit, cita, asesor..." />
+        </div>
+
+        <div class="field">
+          <label>Fecha</label>
+
+          <input type="hidden" id="rangeSelect" value="all" />
+
+          <div class="custom-select" id="rangeDropdown">
+            <button type="button" class="custom-select-btn" id="rangeDropdownBtn">
+              <span id="rangeDropdownLabel">Todo</span>
+              <i class="ti ti-chevron-down"></i>
+            </button>
+
+            <div class="custom-select-menu" id="rangeDropdownMenu">
+              <button type="button" class="custom-option active" data-value="all">
+                <i class="ti ti-calendar-stats"></i>
+                <span>Todo</span>
+              </button>
+
+              <button type="button" class="custom-option" data-value="today">
+                <i class="ti ti-calendar-event"></i>
+                <span>Hoy</span>
+              </button>
+
+              <button type="button" class="custom-option" data-value="7d">
+                <i class="ti ti-calendar-week"></i>
+                <span>Últimos 7 días</span>
+              </button>
+
+              <button type="button" class="custom-option" data-value="30d">
+                <i class="ti ti-calendar-month"></i>
+                <span>Últimos 30 días</span>
+              </button>
+
+              <button type="button" class="custom-option" data-value="custom">
+                <i class="ti ti-calendar-search"></i>
+                <span>Personalizado</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field custom-field hidden">
+          <label>Desde</label>
+          <input id="fromInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
+        </div>
+
+        <div class="field custom-field hidden">
+          <label>Hasta</label>
+          <input id="toInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
+        </div>
+
+        <button class="btn" onclick="loadStats()">
+          <i class="ti ti-search"></i> Filtrar
+        </button>
+
+        <button class="btn" onclick="clearFilters()">
+          <i class="ti ti-x"></i> Limpiar
+        </button>
+      </div>
+    </section>
+
+    <div class="section-label">Métricas generales</div>
+
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-conv">0</div>
+            <div class="metric-label">Conversaciones</div>
+            <div class="metric-foot">Usuarios únicos filtrados</div>
+          </div>
+          <div class="metric-icon"><i class="ti ti-message-circle"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-rec">0</div>
+            <div class="metric-label">Mensajes recibidos</div>
+            <div class="metric-foot">Entradas del usuario</div>
+          </div>
+          <div class="metric-icon icon-green"><i class="ti ti-inbox"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-msg">0</div>
+            <div class="metric-label">Mensajes enviados</div>
+            <div class="metric-foot">Respuestas del bot</div>
+          </div>
+          <div class="metric-icon icon-green"><i class="ti ti-send"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-acc">0</div>
+            <div class="metric-label">Consultas RUNT</div>
+            <div class="metric-foot">Validaciones de licencia</div>
+          </div>
+          <div class="metric-icon icon-yellow"><i class="ti ti-key"></i></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics-grid second">
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-cert">0</div>
+            <div class="metric-label">Consultas SIMIT</div>
+          </div>
+          <div class="metric-icon icon-purple"><i class="ti ti-award"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-asesor">0</div>
+            <div class="metric-label">Asesores activados</div>
+          </div>
+          <div class="metric-icon"><i class="ti ti-user-check"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-norec">0</div>
+            <div class="metric-label">Mensajes no reconocidos</div>
+          </div>
+          <div class="metric-icon icon-red"><i class="ti ti-question-mark"></i></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="charts-row">
+      <div class="chart-card">
+  <div class="chart-header-row">
+    <div>
+      <div class="chart-title" id="activityTitle">Actividad diaria — últimos 14 días</div>
+      <div class="chart-sub" id="activitySub">Interacciones registradas por día según el filtro aplicado</div>
+    </div>
+
+    <div class="chart-controls">
+      <button type="button" class="chart-nav-btn" onclick="moveChartRange(-1)">
+        <i class="ti ti-chevron-left"></i>
+      </button>
+
+      <select id="chartRangeSelect" class="chart-range-select" onchange="changeChartRange()">
+        <option value="14d">14 días</option>
+        <option value="today">Hoy</option>
+        <option value="7d">Últimos 7 días</option>
+        <option value="30d">Últimos 30 días</option>
+        <option value="custom">Personalizado</option>
+      </select>
+
+      <button type="button" class="chart-nav-btn" onclick="moveChartRange(1)">
+        <i class="ti ti-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="chart-custom-dates hidden" id="chartCustomDates">
+    <input id="chartFromInput" type="text" class="input" placeholder="Desde" readonly />
+    <input id="chartToInput" type="text" class="input" placeholder="Hasta" readonly />
+  </div>
+
+  <div class="chart-box">
+    <canvas id="lineChart"></canvas>
+  </div>
+</div>
+
+      <div class="chart-card">
+        <div class="chart-title">Distribución de palabras clave</div>
+        <div class="chart-sub">Acciones detectadas según el filtro aplicado</div>
+        <div class="donut-box">
+          <canvas id="donutChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="bottom-row">
+      <div class="chart-card">
+        <div class="chart-title">Últimas interacciones</div>
+        <div class="chart-sub">Resultados filtrados en tiempo real</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha / Hora</th>
+              <th>Evento</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Palabras clave detectadas</div>
+        <div class="chart-sub">Según filtro aplicado</div>
+        <div id="kwBars"></div>
+      </div>
+    </section>
+
+    <div class="footer">
+      Última actualización: <span id="lastUpdate">—</span>
+      · Iniciado: <span id="iniciadoEn">—</span>
+      · Persistencia: <span id="persistencia">—</span>
+      · CRC VIP
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+  <script src="/public/js/dashboard.js"></script>
+</body>
+</html>
