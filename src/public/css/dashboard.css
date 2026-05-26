@@ -208,12 +208,11 @@
     }
 
     .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 14px;
-      margin-bottom: 14px;
-    }
-
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
     .metrics-grid.second {
       grid-template-columns: repeat(3, 1fr);
       margin-bottom: 22px;

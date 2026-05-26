@@ -372,8 +372,7 @@ function moveChartRange(direction) {
         document.getElementById("m-msg").textContent = formatNumber(data.totales.mensajesEnviados);
         document.getElementById("m-acc").textContent = formatNumber(data.totales.runtConsultas);
         document.getElementById("m-cert").textContent = formatNumber(data.totales.simitConsultas);
-        document.getElementById("m-asesor").textContent = formatNumber(data.totales.asesoresActivados);
-        document.getElementById("m-norec").textContent = formatNumber(data.totales.mensajesNoReconocidos);
+        document.getElementById("m-norec").textContent = formatNumber(data.totales.noReconocidos);
 
         document.getElementById("uptimeVal").textContent = formatUptime(data.uptime);
         document.getElementById("iniciadoEn").textContent = new Date(data.iniciadoEn).toLocaleString("es-CO");
