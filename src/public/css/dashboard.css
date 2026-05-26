@@ -209,14 +209,10 @@
 
     .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  margin-bottom: 14px;
+  margin-bottom: 22px;
 }
-    .metrics-grid.second {
-      grid-template-columns: repeat(3, 1fr);
-      margin-bottom: 22px;
-    }
 
     .metric-card, .chart-card {
       background: linear-gradient(180deg, rgba(255,255,255,.035), transparent), var(--card);
@@ -653,15 +649,13 @@ span.flatpickr-weekday {
         grid-template-columns: 1fr;
       }
 
-      .metrics-grid,
-      .metrics-grid.second {
+      .metrics-grid {
         grid-template-columns: repeat(2, 1fr);
       }
     }
 
     @media (max-width: 560px) {
-      .metrics-grid,
-      .metrics-grid.second {
+      .metrics-grid {
         grid-template-columns: 1fr;
       }
 
@@ -690,8 +684,7 @@ span.flatpickr-weekday {
     grid-template-columns: 1fr;
   }
 
-  .metrics-grid,
-  .metrics-grid.second {
+  .metrics-grid {
     grid-template-columns: 1fr;
   }
 
@@ -857,10 +850,6 @@ canvas {
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .metrics-grid.second {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* Celular y pantallas angostas */
@@ -913,8 +902,7 @@ canvas {
     grid-template-columns: 1fr !important;
   }
 
-  .metrics-grid,
-  .metrics-grid.second {
+  .metrics-grid {
     grid-template-columns: 1fr !important;
   }
 
