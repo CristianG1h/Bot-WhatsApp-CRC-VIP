@@ -136,109 +136,109 @@
     <div class="section-label">Métricas generales</div>
 
     <section class="metrics-grid">
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-conv">0</div>
-        <div class="metric-label">Conversaciones</div>
-        <div class="metric-foot">Usuarios únicos filtrados</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-conv">0</div>
+            <div class="metric-label">Conversaciones</div>
+            <div class="metric-foot">Usuarios únicos filtrados</div>
+          </div>
+          <div class="metric-icon"><i class="ti ti-message-circle"></i></div>
+        </div>
       </div>
-      <div class="metric-icon"><i class="ti ti-message-circle"></i></div>
-    </div>
-  </div>
 
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-rec">0</div>
-        <div class="metric-label">Mensajes recibidos</div>
-        <div class="metric-foot">Entradas del usuario</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-rec">0</div>
+            <div class="metric-label">Mensajes recibidos</div>
+            <div class="metric-foot">Entradas del usuario</div>
+          </div>
+          <div class="metric-icon icon-green"><i class="ti ti-inbox"></i></div>
+        </div>
       </div>
-      <div class="metric-icon icon-green"><i class="ti ti-inbox"></i></div>
-    </div>
-  </div>
 
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-msg">0</div>
-        <div class="metric-label">Mensajes enviados</div>
-        <div class="metric-foot">Respuestas del bot</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-msg">0</div>
+            <div class="metric-label">Mensajes enviados</div>
+            <div class="metric-foot">Respuestas del bot</div>
+          </div>
+          <div class="metric-icon icon-green"><i class="ti ti-send"></i></div>
+        </div>
       </div>
-      <div class="metric-icon icon-green"><i class="ti ti-send"></i></div>
-    </div>
-  </div>
-</section>
 
-<section class="metrics-grid second">
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-acc">0</div>
-        <div class="metric-label">Consultas RUNT</div>
-        <div class="metric-foot">Validaciones de licencia</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-acc">0</div>
+            <div class="metric-label">Consultas RUNT</div>
+            <div class="metric-foot">Validaciones de licencia</div>
+          </div>
+          <div class="metric-icon icon-yellow"><i class="ti ti-key"></i></div>
+        </div>
       </div>
-      <div class="metric-icon icon-yellow"><i class="ti ti-key"></i></div>
-    </div>
-  </div>
 
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-cert">0</div>
-        <div class="metric-label">Consultas SIMIT</div>
-        <div class="metric-foot">Consultas comparendos</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-cert">0</div>
+            <div class="metric-label">Consultas SIMIT</div>
+            <div class="metric-foot">Consultas comparendos</div>
+          </div>
+          <div class="metric-icon icon-purple"><i class="ti ti-award"></i></div>
+        </div>
       </div>
-      <div class="metric-icon icon-purple"><i class="ti ti-award"></i></div>
-    </div>
-  </div>
 
-  <div class="metric-card">
-    <div class="metric-top">
-      <div>
-        <div class="metric-val" id="m-norec">0</div>
-        <div class="metric-label">Mensajes no reconocidos</div>
-        <div class="metric-foot">Mensajes fuera del flujo</div>
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-norec">0</div>
+            <div class="metric-label">Mensajes no reconocidos</div>
+            <div class="metric-foot">Mensajes fuera del flujo</div>
+          </div>
+          <div class="metric-icon icon-red"><i class="ti ti-question-mark"></i></div>
+        </div>
       </div>
-      <div class="metric-icon icon-red"><i class="ti ti-question-mark"></i></div>
-    </div>
-  </div>
-</section>
+    </section>
+
+    <section class="charts-row">
       <div class="chart-card">
-  <div class="chart-header-row">
-    <div>
-      <div class="chart-title" id="activityTitle">Actividad diaria — últimos 14 días</div>
-      <div class="chart-sub" id="activitySub">Interacciones registradas por día según el filtro aplicado</div>
-    </div>
+        <div class="chart-header-row">
+          <div>
+            <div class="chart-title" id="activityTitle">Actividad diaria — últimos 14 días</div>
+            <div class="chart-sub" id="activitySub">Interacciones registradas por día según el filtro aplicado</div>
+          </div>
 
-    <div class="chart-controls">
-      <button type="button" class="chart-nav-btn" onclick="moveChartRange(-1)">
-        <i class="ti ti-chevron-left"></i>
-      </button>
+          <div class="chart-controls">
+            <button type="button" class="chart-nav-btn" onclick="moveChartRange(-1)">
+              <i class="ti ti-chevron-left"></i>
+            </button>
 
-      <select id="chartRangeSelect" class="chart-range-select" onchange="changeChartRange()">
-        <option value="14d">14 días</option>
-        <option value="today">Hoy</option>
-        <option value="7d">Últimos 7 días</option>
-        <option value="30d">Últimos 30 días</option>
-        <option value="custom">Personalizado</option>
-      </select>
+            <select id="chartRangeSelect" class="chart-range-select" onchange="changeChartRange()">
+              <option value="14d">14 días</option>
+              <option value="today">Hoy</option>
+              <option value="7d">Últimos 7 días</option>
+              <option value="30d">Últimos 30 días</option>
+              <option value="custom">Personalizado</option>
+            </select>
 
-      <button type="button" class="chart-nav-btn" onclick="moveChartRange(1)">
-        <i class="ti ti-chevron-right"></i>
-      </button>
-    </div>
-  </div>
+            <button type="button" class="chart-nav-btn" onclick="moveChartRange(1)">
+              <i class="ti ti-chevron-right"></i>
+            </button>
+          </div>
+        </div>
 
-  <div class="chart-custom-dates hidden" id="chartCustomDates">
-    <input id="chartFromInput" type="text" class="input" placeholder="Desde" readonly />
-    <input id="chartToInput" type="text" class="input" placeholder="Hasta" readonly />
-  </div>
+        <div class="chart-custom-dates hidden" id="chartCustomDates">
+          <input id="chartFromInput" type="text" class="input" placeholder="Desde" readonly />
+          <input id="chartToInput" type="text" class="input" placeholder="Hasta" readonly />
+        </div>
 
-  <div class="chart-box">
-    <canvas id="lineChart"></canvas>
-  </div>
-</div>
+        <div class="chart-box">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
 
       <div class="chart-card">
         <div class="chart-title">Distribución de palabras clave</div>
