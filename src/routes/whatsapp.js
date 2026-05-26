@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const Stats = require("../services/stats");
 
 const { VERIFY_TOKEN } = require("../config");
 const { sendText } = require("../services/whatsapp");
@@ -123,6 +124,7 @@ function obtenerKeyDuplicado(from, text, options = {}) {
 
   // Fallback: si no hay ID, usamos texto pero con TTL corto.
   // Así no bloquea respuestas legítimas como "1" varias veces en el flujo.
+  Stats.mensajeNoReconocido(from, text);
   return `fallback:${String(from || "").trim()}::${String(text || "")
     .trim()
     .toLowerCase()}::${options.source || "unknown"}`;
@@ -188,18 +190,17 @@ async function responder(to, body) {
 
   if (String(to).startsWith("whatsapp:")) {
     const partes = dividirMensaje(texto, 1300);
-
     for (const parte of partes) {
       await sendTwilioText(to, parte);
+      Stats.mensajeEnviado(to, parte.slice(0, 120));
       await esperar(700);
     }
-
     await logOutgoingMessage(to, texto);
     return;
   }
 
   const resultado = await sendText(to, texto);
-
+  Stats.mensajeEnviado(to, texto.slice(0, 120));
   await logOutgoingMessage(to, texto);
   return resultado;
 }
@@ -1284,6 +1285,7 @@ if (messageType !== "incoming") return;
 });
 
 async function procesarMensaje(from, text, options = {}) {
+  Stats.mensajeRecibido(from);
   if (esMensajeDuplicado(from, text, options)) {
     console.log("⏭️ Mensaje duplicado ignorado:", {
       from,
@@ -1319,11 +1321,10 @@ async function procesarMensaje(from, text, options = {}) {
 }
 
   if (isRateLimited(from, session.step)) {
-    await responder(
-      from,
-      "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento."
-    );
-    return;
+  Stats.rateLimitado(from);
+  await responder(from, "⚠️ Has enviado muchos mensajes seguidos.\nPor favor espera un momento.");
+  return;
+}
   }
 
   // Si el usuario está con asesor, el bot NO debe responder automático.
@@ -1372,6 +1373,7 @@ async function procesarMensaje(from, text, options = {}) {
 
   // Si el usuario pide asesor en cualquier momento
 if (esSolicitudAsesor(msg)) {
+  Stats.asesorActivado(from, motivo);
   await transferirAAsesor(from, "Usuario escribió palabra clave de asesor");
   return;
 }
@@ -1507,6 +1509,7 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
 
     try {
       const resultado = await consultarSimitPorDocumento(documento);
+      Stats.simitConsultado(from, documento, "ok");
       const respuesta = formatearResultadoSimitWhatsApp(documento, resultado);
 
       if (Array.isArray(respuesta)) {
@@ -1524,6 +1527,7 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
       });
     } catch (error) {
       console.error("❌ Error SIMIT:", error.message);
+      Stats.simitConsultado(from, documento, "ok");
       await responder(
         from,
         "⚠️ En este momento no fue posible consultar SIMIT.\nPor favor intenta más tarde o escribe *asesor*."
@@ -1851,6 +1855,7 @@ Ahora vamos a continuar revisando tu información en RUNT para validar el estado
       );
 
       await consultarRuntYContinuar(from, documento);
+      Stats.runtConsultado(from, cedula, "ok");
       return;
     } catch (error) {
       console.error("❌ Error SIMIT:", error.message);
@@ -1865,6 +1870,7 @@ Recuerda que si tienes comparendos o multas pendientes, el trámite final de la 
       );
 
       await consultarRuntYContinuar(from, documento);
+      Stats.runtConsultado(from, cedula, "ok");
       return;
     }
   }
@@ -1918,6 +1924,7 @@ De todas formas, vamos a revisar tu información en RUNT.`
       );
 
       await consultarRuntYContinuar(from, cedula);
+      Stats.runtConsultado(from, cedula, "ok");
       return;
     }
 
@@ -1945,6 +1952,7 @@ De todas formas, vamos a revisar tu información en RUNT.`
     }
 
     await consultarRuntYContinuar(from, text);
+    Stats.runtConsultado(from, cedula, "ok");
     return;
   }
 
