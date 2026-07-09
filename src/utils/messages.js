@@ -1000,6 +1000,204 @@ const FAQ_KEYWORDS = {
     "me sirve para despues",
     "me sirve para después",
   ],
+
+  cita_previa: [
+    "necesito cita",
+    "necesito agendar",
+    "requiere cita",
+    "requieren cita",
+    "sin cita",
+    "puedo ir sin cita",
+    "puedo llegar sin cita",
+    "hay que pedir cita",
+    "hay que sacar cita",
+    "tengo que agendar",
+    "debo agendar",
+    "atienden por orden de llegada",
+    "puedo llegar directamente",
+  ],
+
+  incluye_plastico: [
+    "incluye el plastico",
+    "incluye el plástico",
+    "incluye la licencia fisica",
+    "incluye la licencia física",
+    "entregan la licencia",
+    "entregan el pase",
+    "dan el pase",
+    "me dan la licencia",
+    "el plastico esta incluido",
+    "el plástico está incluido",
+    "precio incluye licencia",
+    "valor incluye licencia",
+    "solo el examen",
+    "solo examen medico",
+    "solo examen médico",
+    "pago del plastico",
+    "pago del plástico",
+  ],
+
+  resultado_runt: [
+    "suben al runt",
+    "sube al runt",
+    "cargan al runt",
+    "carga al runt",
+    "queda en runt",
+    "aparece en runt",
+    "resultado en runt",
+    "resultado al runt",
+    "suben el resultado",
+    "subir el resultado",
+    "certificado en runt",
+    "cuanto demora en runt",
+    "cuánto demora en runt",
+    "cuando aparece en runt",
+    "cuándo aparece en runt",
+  ],
+
+  cita_transito: [
+    "cita de transito",
+    "cita de tránsito",
+    "cita en movilidad",
+    "cita de movilidad",
+    "cita en ventanilla unica",
+    "cita en ventanilla única",
+    "vus cita",
+    "me ayudan con la cita",
+    "sacan la cita de transito",
+    "sacan la cita de tránsito",
+    "despues del crc que hago",
+    "después del crc qué hago",
+  ],
+
+  parqueadero: [
+    "parqueadero",
+    "parqueo",
+    "donde parqueo",
+    "dónde parqueo",
+    "puedo parquear",
+    "tienen parking",
+    "hay parqueadero",
+  ],
+
+  dos_categorias: [
+    "dos categorias",
+    "dos categorías",
+    "carro y moto",
+    "moto y carro",
+    "ambas categorias",
+    "ambas categorías",
+    "renovar las dos",
+    "renovar ambas",
+    "categoria de carro y moto",
+    "categoría de carro y moto",
+  ],
+
+  categorias: [
+    "que categoria necesito",
+    "qué categoría necesito",
+    "cual categoria necesito",
+    "cuál categoría necesito",
+    "que significa a1",
+    "qué significa a1",
+    "que significa a2",
+    "qué significa a2",
+    "que significa b1",
+    "qué significa b1",
+    "que significa b2",
+    "qué significa b2",
+    "que significa b3",
+    "qué significa b3",
+    "que significa c1",
+    "qué significa c1",
+    "que significa c2",
+    "qué significa c2",
+    "que significa c3",
+    "qué significa c3",
+    "diferencia a1 a2",
+    "diferencia entre a1 y a2",
+    "diferencia b1 c1",
+    "diferencia entre b1 y c1",
+    "categoria para moto",
+    "categoría para moto",
+    "categoria para carro",
+    "categoría para carro",
+    "categoria servicio publico",
+    "categoría servicio público",
+    "moto de 125",
+    "moto 125",
+    "moto de 150",
+    "moto 150",
+    "moto de 200",
+    "moto 200",
+  ],
+
+  usa_gafas: [
+    "uso gafas",
+    "uso lentes",
+    "tengo gafas",
+    "llevar gafas",
+    "llevar lentes",
+    "debo llevar las gafas",
+    "debo usar gafas",
+    "restriccion de gafas",
+    "restricción de gafas",
+    "licencia dice gafas",
+  ],
+
+  primera_vez_info: [
+    "que necesito para primera vez",
+    "qué necesito para primera vez",
+    "requisitos primera vez",
+    "ustedes hacen primera vez",
+    "como es primera vez",
+    "cómo es primera vez",
+    "nunca he tenido licencia",
+    "nunca he sacado licencia",
+  ],
+
+  curso_conduccion: [
+    "curso de conduccion",
+    "curso de conducción",
+    "clases de conduccion",
+    "clases de conducción",
+    "escuela de conduccion",
+    "escuela de conducción",
+    "academia de conduccion",
+    "academia de conducción",
+    "aprender a manejar",
+    "clases para manejar",
+  ],
+
+  licencia_perdida: [
+    "perdi la licencia",
+    "perdí la licencia",
+    "se me perdio la licencia",
+    "se me perdió la licencia",
+    "perdi el pase",
+    "perdí el pase",
+    "se me perdio el pase",
+    "se me perdió el pase",
+    "me robaron la licencia",
+    "me robaron el pase",
+    "licencia perdida",
+    "pase perdido",
+    "duplicado de licencia",
+    "sacar duplicado",
+  ],
+
+  servicio_no_ofrecido: [
+    "traspaso",
+    "levantamiento de prenda",
+    "levantar prenda",
+    "matricula del vehiculo",
+    "matrícula del vehículo",
+    "impuesto vehicular",
+    "impuestos del carro",
+    "curso de montacargas",
+    "curso montacargas",
+  ],
+
 };
 
 const FAQ_RESPONSES = {
@@ -1094,7 +1292,7 @@ Lunes a viernes:
 *7:00 a.m. a 3:30 p.m.*
 
 Sábados:
-*7:00 a.m. a 11:00 a.m.*
+*7:00 a.m. a 11:30 a.m.*
 
 Domingos y festivos no laboramos.`,
 
@@ -1103,7 +1301,7 @@ Domingos y festivos no laboramos.`,
 Atendemos en estos horarios:
 
 📅 Lunes a viernes: *7:00 a.m. a 3:30 p.m.*
-📅 Sábados: *7:00 a.m. a 11:00 a.m.*
+📅 Sábados: *7:00 a.m. a 11:30 a.m.*
 
 Domingos y festivos no hay atención.`,
 
@@ -1112,7 +1310,7 @@ Domingos y festivos no hay atención.`,
 Nuestro horario es:
 
 🕒 Lunes a viernes de *7:00 a.m. a 3:30 p.m.*
-🕒 Sábados de *7:00 a.m. a 11:00 a.m.*
+🕒 Sábados de *7:00 a.m. a 11:30 a.m.*
 
 Te recomendamos venir con tiempo.`,
 
@@ -1121,13 +1319,13 @@ Te recomendamos venir con tiempo.`,
 Puedes asistir:
 
 Lunes a viernes: *7:00 a.m. a 3:30 p.m.*
-Sábados: *7:00 a.m. a 11:00 a.m.*
+Sábados: *7:00 a.m. a 11:30 a.m.*
 
 No atendemos domingos ni festivos.`,
 
     `Te confirmo ✅
 
-VIP CRC Galerías atiende de lunes a viernes hasta las *3:30 p.m.* y sábados hasta las *11:00 a.m.*`,
+VIP CRC Galerías atiende de lunes a viernes hasta las *3:30 p.m.* y sábados hasta las *11:30 a.m.*`,
   ],
 
   documentos: [
@@ -1169,25 +1367,23 @@ Lo más importante es traer tu *documento original físico*. Sin ese documento n
   duracion: [
     `Claro ✅
 
-El examen médico normalmente puede tardar entre *30 minutos y 1 hora*, dependiendo del flujo de atención en sede.`,
+El proceso normalmente dura alrededor de *1 hora* y, en algunos casos, puede tardar hasta *1 hora y 30 minutos*, dependiendo del flujo de atención y del tiempo requerido en las evaluaciones.`,
 
     `Sí claro ✅
 
-El proceso suele tomar aproximadamente entre *30 y 60 minutos*.
-
-Te recomendamos llegar con algo de tiempo.`,
+El proceso suele tomar aproximadamente *1 hora*. En algunos casos puede extenderse hasta *1 hora y 30 minutos*. Te recomendamos venir con disponibilidad suficiente.`,
 
     `Con gusto ✅
 
-La atención puede tardar cerca de *1 hora*, dependiendo de la cantidad de usuarios que haya en el momento.`,
+La atención suele tomar cerca de *1 hora* y puede extenderse hasta *1 hora y 30 minutos*, dependiendo del flujo y del desarrollo de las evaluaciones.`,
 
     `Claro ✅
 
-Normalmente es un proceso rápido, pero calcula entre *30 minutos y 1 hora* para hacerlo con tranquilidad.`,
+Calcula aproximadamente *1 hora* para el proceso. En algunos casos puede tomar hasta *1 hora y 30 minutos*, por lo que recomendamos venir con tiempo suficiente.`,
 
     `Te explico ✅
 
-El tiempo depende del flujo de personas en sede, pero normalmente el examen está entre *30 y 60 minutos*.`,
+El tiempo depende del flujo de personas y del desarrollo de las evaluaciones. Normalmente es cerca de *1 hora* y puede llegar hasta *1 hora y 30 minutos*.`,
   ],
 
   pagos: [
@@ -1239,18 +1435,154 @@ Tu certificado del CRC tiene validez de *6 meses*. Durante ese tiempo puedes usa
 
 La vigencia es de *6 meses*. Por eso muchas personas hacen primero el examen y luego completan el trámite pendiente.`,
   ],
+
+  cita_previa: [
+    `Sí puedes venir ✅\n\nEn VIP CRC Galerías puedes asistir sin cita previa dentro del horario de atención. Si prefieres, también podemos ayudarte a dejar tu atención preconfirmada para facilitar tu llegada.`,
+
+    `No es obligatorio llegar con cita previa 😊\n\nPuedes asistir directamente a VIP CRC Galerías dentro del horario de atención. También podemos tomar tus datos y dejar la atención preconfirmada para que llegues con el proceso adelantado.`,
+
+    `Claro ✅\n\nPuedes acercarte directamente a VIP CRC Galerías. La cita previa no es obligatoria; si ya sabes qué día deseas asistir, también podemos ayudarte a dejar la atención preconfirmada.`,
+  ],
+
+  incluye_plastico: [
+    `Te explico ✅\n\nEl valor del CRC corresponde al proceso de evaluación y certificación. La expedición física de la licencia y los derechos del organismo de tránsito no están incluidos y se tramitan ante la entidad de tránsito correspondiente.`,
+
+    `Son dos etapas diferentes 👍\n\n1️⃣ En el CRC realizas las evaluaciones y la certificación.\n2️⃣ La expedición física de la licencia se gestiona y paga ante el organismo de tránsito correspondiente.`,
+
+    `El valor que te informamos corresponde al proceso del CRC ✅\n\nEl plástico de la licencia no lo entrega el CRC. Ese paso se realiza posteriormente ante el organismo de tránsito o movilidad correspondiente.`,
+  ],
+
+  resultado_runt: [
+    `Sí ✅\n\nAl finalizar satisfactoriamente el proceso y emitirse la certificación correspondiente, la información del CRC se registra en RUNT para que puedas continuar con el trámite que corresponda.`,
+
+    `Correcto 👍\n\nLa información de la certificación del CRC se carga al RUNT una vez finaliza correctamente el proceso. El estado específico de una licencia se debe verificar mediante la consulta real en RUNT.`,
+
+    `Sí ✅\n\nDespués de completar correctamente las evaluaciones del CRC, la certificación se registra en RUNT. Si necesitas conocer el estado de tu licencia, podemos continuar con la consulta correspondiente.`,
+  ],
+
+  cita_transito: [
+    `Sí podemos orientarte sobre el paso siguiente ✅\n\nDespués del proceso del CRC podemos ayudarte con la orientación para gestionar la cita ante tránsito o movilidad. La disponibilidad final depende del organismo de tránsito correspondiente.`,
+
+    `Claro 👍\n\nUna vez completes el proceso del CRC, podemos orientarte para continuar con la cita del trámite ante la entidad correspondiente. La asignación y disponibilidad dependen de esa entidad.`,
+
+    `Sí ✅\n\nPodemos acompañarte con la orientación del paso posterior al CRC, incluida la gestión de la cita cuando aplique. La confirmación final siempre depende del organismo de tránsito.`,
+  ],
+
+  parqueadero: [
+    `Sí ✅\n\nVIP CRC Galerías cuenta con opción de parqueadero para facilitar tu visita. Al llegar puedes pedir orientación al personal de la sede.`,
+
+    `Claro 🚗✅\n\nTenemos opción de parqueadero para nuestros usuarios. Cuando llegues a la sede, el personal te indicará el acceso correspondiente.`,
+
+    `Sí, puedes venir en tu vehículo ✅\n\nContamos con opción de parqueadero. Al llegar a VIP CRC Galerías te orientamos para el ingreso.`,
+  ],
+
+  dos_categorias: [
+    `Sí, podemos orientarte para realizar el proceso de dos categorías ✅\n\n🚗🏍️ Precio normal: *$320.000*\n🎁 Promoción actual: *$250.000*\n\nAntes de confirmar el caso, es recomendable revisar cómo aparecen tus categorías en RUNT.`,
+
+    `Claro ✅\n\nPara el proceso de dos categorías, por ejemplo moto y carro, manejamos valor normal de *$320.000* y promoción actual de *$250.000*.\n\nPodemos revisar tu caso en RUNT para orientarte correctamente.`,
+
+    `Sí 👍\n\nSi necesitas realizar el proceso para dos categorías, la promoción actual es de *$250.000* frente al valor normal de *$320.000*.\n\nLo ideal es validar primero las categorías registradas en RUNT.`,
+  ],
+
+  categorias: [
+    `Claro ✅\n\n🏍️ *A1:* motocicletas de hasta 125 c.c.\n🏍️ *A2:* motocicletas de más de 125 c.c.\n🚗 *B1:* automóviles, camperos, camionetas y microbuses de servicio particular.\n🚕 *C1:* vehículos livianos equivalentes de servicio público.\n\nPara B2, B3, C2 o C3, el tipo de vehículo es diferente; cuéntame cuál manejas y te orientamos.`,
+
+    `Las categorías dependen del tipo de vehículo y del servicio ✅\n\nA1 y A2 corresponden a motocicletas; B1, B2 y B3 a vehículos de servicio particular; C1, C2 y C3 a vehículos de servicio público.\n\nSi me dices qué vehículo conduces, podemos orientarte sin adivinar la categoría.`,
+
+    `Te ayudo 👍\n\nPara moto: *A1* es hasta 125 c.c. y *A2* es para más de 125 c.c.\n\nPara vehículos de cuatro o más ruedas, las categorías B corresponden a servicio particular y las C a servicio público, con subcategorías según el tipo de vehículo.`,
+  ],
+
+  usa_gafas: [
+    `Sí, tráelas 👓✅\n\nSi utilizas gafas o lentes formulados habitualmente, llévalos y úsalos durante la evaluación cuando el profesional te lo indique. La certificación depende del resultado de la valoración realizada en el CRC.`,
+
+    `Claro 👓\n\nSi usas gafas o lentes formulados, es importante llevarlos al proceso. El profesional evaluará tu condición y determinará lo correspondiente según los resultados.`,
+
+    `Sí ✅\n\nLleva las gafas o lentes que utilizas normalmente. No podemos anticipar el resultado de la evaluación, porque depende de las pruebas realizadas por los profesionales del CRC.`,
+  ],
+
+  primera_vez_info: [
+    `Claro ✅\n\nPara una licencia por primera vez, el CRC realiza la evaluación de aptitud correspondiente. El CRC no reemplaza la formación de conducción ni la expedición de la licencia. Podemos orientarte sobre la parte del proceso que corresponde al CRC.`,
+
+    `Sí atendemos procesos relacionados con primera vez ✅\n\nNuestra función como CRC es realizar las evaluaciones y certificación correspondientes. La formación de conducción y la expedición física de la licencia pertenecen a etapas diferentes del proceso.`,
+
+    `Te orientamos 👍\n\nEn primera vez, VIP CRC Galerías realiza la parte correspondiente a las evaluaciones del CRC. Para definir tu caso correctamente también es útil revisar la información registrada en RUNT.`,
+  ],
+
+  curso_conduccion: [
+    `Te aclaro 😊\n\nSomos un *Centro de Reconocimiento de Conductores (CRC)*. Realizamos evaluaciones de aptitud para trámites de licencia. No somos una escuela de conducción ni dictamos clases para aprender a manejar.`,
+
+    `VIP CRC Galerías es un CRC ✅\n\nNuestra función es realizar las evaluaciones y certificación correspondientes. Los cursos y clases de conducción son ofrecidos por Centros de Enseñanza Automovilística autorizados.`,
+
+    `No dictamos cursos de conducción 👍\n\nSomos un Centro de Reconocimiento de Conductores y atendemos la parte de evaluaciones para trámites de licencia.`,
+  ],
+
+  licencia_perdida: [
+    `En caso de pérdida del plástico, primero conviene verificar cómo aparece tu licencia en RUNT 👍\n\nEl CRC realiza la evaluación cuando el trámite correspondiente la requiere; el duplicado o expedición física se gestiona ante el organismo de tránsito.`,
+
+    `Entiendo ✅\n\nSi perdiste o te robaron la licencia, no es correcto asumir automáticamente que debes renovarla. Primero se debe revisar su estado real y luego continuar con el trámite que corresponda ante la entidad competente.`,
+
+    `Te orientamos 👍\n\nLa pérdida del documento físico y la renovación no son exactamente lo mismo. Conviene validar primero el estado de la licencia en RUNT para saber cuál es el siguiente paso correcto.`,
+  ],
+
+  servicio_no_ofrecido: [
+    `Te cuento 😊\n\nSomos VIP CRC Galerías, un Centro de Reconocimiento de Conductores enfocado en evaluaciones para trámites de licencia de conducción. La consulta que mencionas no corresponde al servicio del CRC. Para evitar darte una orientación incorrecta, debes validarla con la entidad o prestador responsable de ese trámite.`,
+
+    `Ese trámite no corresponde al alcance de un CRC ✅\n\nPor este canal podemos ayudarte con renovación, primera vez, categorías, evaluaciones del CRC, precios, horarios y ubicación.`,
+
+    `Para evitar darte información incorrecta, te aclaro que ese servicio no lo realiza VIP CRC Galerías. Nuestro canal está enfocado en los procesos y evaluaciones del CRC para licencias de conducción.`,
+  ],
+
 };
 
-function detectarPreguntaRapida(textoOriginal) {
-  const texto = String(textoOriginal || "").toLowerCase();
+function normalizarTextoFAQ(textoOriginal) {
+  return String(textoOriginal || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectarPreguntasRapidas(textoOriginal) {
+  const texto = normalizarTextoFAQ(textoOriginal);
+  const tipos = [];
 
   for (const [tipo, keywords] of Object.entries(FAQ_KEYWORDS)) {
-    if (keywords.some((keyword) => texto.includes(keyword))) {
-      return tipo;
+    const coincide = keywords.some((keyword) =>
+      texto.includes(normalizarTextoFAQ(keyword))
+    );
+
+    if (coincide) {
+      tipos.push(tipo);
     }
   }
 
-  return null;
+  let resultado = tipos;
+
+  // Evita respuestas duplicadas cuando una FAQ específica ya resuelve la consulta.
+  if (resultado.includes("usa_gafas")) {
+    resultado = resultado.filter((tipo) => tipo !== "documentos");
+  }
+
+  if (resultado.includes("incluye_plastico")) {
+    resultado = resultado.filter((tipo) => tipo !== "precios");
+  }
+
+  if (resultado.includes("dos_categorias")) {
+    resultado = resultado.filter(
+      (tipo) => tipo !== "precios" && tipo !== "categorias"
+    );
+  }
+
+  if (resultado.includes("servicio_no_ofrecido")) {
+    resultado = ["servicio_no_ofrecido"];
+  }
+
+  return resultado;
+}
+
+function detectarPreguntaRapida(textoOriginal) {
+  return detectarPreguntasRapidas(textoOriginal)[0] || null;
 }
 
 function obtenerRespuestaPreguntaRapida(tipo) {
@@ -1260,8 +1592,46 @@ function obtenerRespuestaPreguntaRapida(tipo) {
     return null;
   }
 
-  const index = Math.floor(Math.random() * respuestas.length);
-  return respuestas[index];
+  return randomItem(respuestas);
+}
+
+function obtenerContextoParaIA() {
+  const seccionesFAQ = [
+    "cita_previa",
+    "incluye_plastico",
+    "resultado_runt",
+    "cita_transito",
+    "parqueadero",
+    "dos_categorias",
+    "categorias",
+    "usa_gafas",
+    "primera_vez_info",
+    "curso_conduccion",
+    "licencia_perdida",
+    "servicio_no_ofrecido",
+    "documentos",
+    "vigencia",
+  ]
+    .map((tipo) => FAQ_RESPONSES[tipo]?.[0])
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    "PRECIOS Y PROMOCIONES AUTORIZADOS:",
+    precios[0],
+    "DURACIÓN AUTORIZADA:",
+    duracion[0],
+    "HORARIOS AUTORIZADOS:",
+    horarios[0],
+    "MEDIOS DE PAGO AUTORIZADOS:",
+    pagos[0],
+    "PROCESO DEL CRC:",
+    proceso[0],
+    "UBICACIÓN:",
+    ubicacion[0],
+    "RESPUESTAS Y ACLARACIONES AUTORIZADAS:",
+    seccionesFAQ,
+  ].join("\n\n");
 }
 
 function esRespuestaSi(textoOriginal) {
@@ -1319,7 +1689,9 @@ function getMessage(type) {
 module.exports = {
   getMessage,
   detectarPreguntaRapida,
+  detectarPreguntasRapidas,
   obtenerRespuestaPreguntaRapida,
+  obtenerContextoParaIA,
   esRespuestaSi,
   esRespuestaNo,
 };
