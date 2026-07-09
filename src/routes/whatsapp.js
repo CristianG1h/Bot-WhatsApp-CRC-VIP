@@ -240,8 +240,9 @@ function pareceConsultaLibre(textoOriginal) {
 
   const iniciosPregunta = [
     "que ", "qué ", "como ", "cómo ", "cuando ", "cuándo ",
-    "donde ", "dónde ", "cual ", "cuál ", "puedo ", "debo ",
-    "tengo ", "necesito ", "quisiera saber", "me puedes explicar",
+    "donde ", "dónde ", "cual ", "cuál ", "quien ", "quién ",
+    "quienes ", "quiénes ", "puedo ", "debo ", "tengo ",
+    "necesito ", "quisiera saber", "me puedes explicar",
     "me puede explicar", "una pregunta",
   ];
 
@@ -323,12 +324,37 @@ function entradaEsperadaDelFlujo(session, msg, text) {
   return false;
 }
 
+function esMensajeTrivialSinIA(msg) {
+  const texto = String(msg || "").trim().toLowerCase();
+
+  return [
+    "ok",
+    "okay",
+    "oki",
+    "vale",
+    "listo",
+    "perfecto",
+    "gracias",
+    "muchas gracias",
+    "entiendo",
+    "dale",
+    "bueno",
+    "👍",
+    "👌",
+  ].includes(texto);
+}
+
 function debeIntentarIA(session, msg, text) {
   if (!iaConfigurada()) return false;
   if (pareceDatoPersonal(text)) return false;
   if (esPasoProtegidoDeIA(session?.step)) return false;
   if (entradaEsperadaDelFlujo(session, msg, text)) return false;
-  return pareceConsultaLibre(text);
+  if (esMensajeTrivialSinIA(msg)) return false;
+
+  // El orden del flujo ya intentó FAQ e intenciones claras antes de llegar aquí.
+  // Por eso cualquier mensaje restante con contenido útil pasa a la IA,
+  // aunque no empiece por “qué”, “cómo”, “quién”, etc.
+  return String(text || "").trim().length >= 4;
 }
 
 async function manejarFallbackIA(from, text, msg, session) {
@@ -336,7 +362,7 @@ async function manejarFallbackIA(from, text, msg, session) {
     return false;
   }
 
-  console.log("🧠 Intentando IA fallback:", {
+  console.log("🧠 Intentando IA fallback (FAQ sin coincidencia):", {
     from,
     step: session.step,
     preview: String(text || "").replace(/\s+/g, " ").slice(0, 120),
