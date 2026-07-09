@@ -27,11 +27,13 @@ const { isRateLimited } = require("../utils/rateLimit");
 const {
   getMessage,
   detectarPreguntaRapida,
+  detectarPreguntasRapidas,
   obtenerRespuestaPreguntaRapida,
   esRespuestaSi,
   esRespuestaNo,
 } = require("../utils/messages");
 const { enviarCorreoCita } = require("../services/email");
+const { consultarIA, iaConfigurada } = require("../services/ai");
 const {
   logIncomingMessage,
   logOutgoingMessage,
@@ -177,6 +179,191 @@ function esIntencionCrc(msg) {
     msg.includes("agendar") ||
     msg.includes("cita")
   );
+}
+
+
+function esIntencionRenovacionClara(msg) {
+  return [
+    "quiero renovar",
+    "necesito renovar",
+    "deseo renovar",
+    "quiero refrendar",
+    "necesito refrendar",
+    "voy a renovar",
+    "quiero hacer la renovacion",
+    "quiero hacer la renovación",
+  ].some((frase) => msg.includes(frase));
+}
+
+function esIntencionPrimeraVezClara(msg) {
+  return [
+    "quiero sacar mi licencia por primera vez",
+    "quiero sacar licencia por primera vez",
+    "es mi primera vez",
+    "nunca he tenido licencia y quiero sacarla",
+    "quiero mi primera licencia",
+  ].some((frase) => msg.includes(frase));
+}
+
+function esIntencionAgendarClara(msg) {
+  return [
+    "quiero agendar",
+    "necesito agendar",
+    "quiero una cita",
+    "quiero reservar",
+    "quiero separar cita",
+    "quiero preconfirmar",
+  ].some((frase) => msg.includes(frase));
+}
+
+function pareceDatoPersonal(textoOriginal) {
+  const texto = String(textoOriginal || "").trim();
+  const soloDigitos = texto.replace(/\D/g, "");
+  const posiblesNumeros = texto.match(/(?:\d[\s.\-]?){7,12}/g) || [];
+
+  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(texto)) return true;
+  if (/^\d{5,12}$/.test(texto)) return true;
+  if (posiblesNumeros.some((valor) => valor.replace(/\D/g, "").length >= 7)) {
+    return true;
+  }
+  if (soloDigitos.length >= 7 && soloDigitos.length <= 12 && texto.length < 20) {
+    return true;
+  }
+
+  return false;
+}
+
+function pareceConsultaLibre(textoOriginal) {
+  const texto = String(textoOriginal || "").trim().toLowerCase();
+
+  if (texto.length < 8) return false;
+
+  const iniciosPregunta = [
+    "que ", "qué ", "como ", "cómo ", "cuando ", "cuándo ",
+    "donde ", "dónde ", "cual ", "cuál ", "puedo ", "debo ",
+    "tengo ", "necesito ", "quisiera saber", "me puedes explicar",
+    "me puede explicar", "una pregunta",
+  ];
+
+  const temasCRC = [
+    "licencia", "pase", "crc", "runt", "categoria", "categoría",
+    "moto", "carro", "vehiculo", "vehículo", "renovar", "renovacion",
+    "renovación", "refrendar", "examen", "certificado", "conducir",
+    "conduccion", "conducción", "transito", "tránsito", "movilidad",
+  ];
+
+  return (
+    texto.includes("?") ||
+    iniciosPregunta.some((inicio) => texto.startsWith(inicio)) ||
+    (texto.length >= 18 && temasCRC.some((tema) => texto.includes(tema))) ||
+    texto.length >= 35
+  );
+}
+
+function esPasoProtegidoDeIA(step) {
+  return [
+    "CIA_AUTORIZACION",
+    "CIA_DOCUMENTO",
+    "CIA_FINAL",
+    "COMPARENDO_SIMIT_DOCUMENTO",
+    "SIMIT_DECISION_CRC",
+    "DIA_PERSONALIZADO",
+    "HORARIO_PERSONALIZADO",
+    "NOMBRE_CITA",
+    "CEDULA_CITA",
+    "TELEFONO_CITA",
+    "CORREO_CITA",
+    "CONFIRMAR_CITA",
+    "ENVIANDO_CORREO_CITA",
+    "DATOS_CITA",
+    "HUMANO",
+  ].includes(step);
+}
+
+function entradaEsperadaDelFlujo(session, msg, text) {
+  const step = session?.step || "MENU_INICIAL";
+
+  if (["menu", "menú", "inicio", "volver", "hola", "buenas"].includes(msg)) {
+    return true;
+  }
+
+  if (step === "MENU_PRINCIPAL") return ["1", "2", "3"].includes(msg);
+  if (step === "MENU_TRAMITE") return ["1", "2", "3"].includes(msg);
+  if (step === "MENU_INFORMACION") return /^[1-7]$/.test(msg);
+  if (step === "FAQ_CONTINUAR") return esRespuestaSi(msg) || esRespuestaNo(msg);
+
+  if (step === "COMPARENDO") {
+    return (
+      ["1", "2", "3", "si", "sí", "no"].includes(msg) ||
+      msg.includes("comparendo") ||
+      msg.includes("no se") ||
+      msg.includes("no sé")
+    );
+  }
+
+  if (step === "CEDULA") return esCedulaValida(String(text || "").trim());
+
+  if (step === "AGENDAR") {
+    return (
+      ["1", "2", "si", "sí", "no"].includes(msg) ||
+      msg.includes("agendar") ||
+      msg.includes("cita")
+    );
+  }
+
+  if (step === "DIA_CITA") return Boolean(detectarDia(msg));
+
+  if (step === "HORARIO_CITA") {
+    const fechaCita = session.fechaCitaISO
+      ? new Date(`${session.fechaCitaISO}T12:00:00-05:00`)
+      : null;
+    return Boolean(detectarHorario(msg, fechaCita));
+  }
+
+  return false;
+}
+
+function debeIntentarIA(session, msg, text) {
+  if (!iaConfigurada()) return false;
+  if (pareceDatoPersonal(text)) return false;
+  if (esPasoProtegidoDeIA(session?.step)) return false;
+  if (entradaEsperadaDelFlujo(session, msg, text)) return false;
+  return pareceConsultaLibre(text);
+}
+
+async function manejarFallbackIA(from, text, msg, session) {
+  if (!debeIntentarIA(session, msg, text)) {
+    return false;
+  }
+
+  const respuestaIA = await consultarIA({
+    mensaje: text,
+    session,
+  });
+
+  if (!respuestaIA?.respuesta) {
+    return false;
+  }
+
+  console.log("🧠 IA fallback respondió:", {
+    from,
+    step: session.step,
+    confianza: respuestaIA.confianza,
+    tema: respuestaIA.tema,
+  });
+
+  await responder(from, respuestaIA.respuesta);
+
+  const preguntaContinuacion = preguntaActualPorStep(session);
+
+  if (preguntaContinuacion) {
+    await responder(
+      from,
+      `Para continuar con el proceso donde íbamos:\n\n${preguntaContinuacion}`
+    );
+  }
+
+  return true;
 }
 
 async function responder(to, body) {
@@ -809,6 +996,13 @@ function esProcesoActivoParaFAQ(step) {
 
 function preguntaActualPorStep(session) {
   switch (session.step) {
+    case "MENU_INICIAL":
+    case "MENU_PRINCIPAL":
+      return menuPrincipal();
+
+    case "MENU_INFORMACION":
+      return menuInformacion();
+
     case "MENU_TRAMITE":
       return menuTramite();
 
@@ -912,37 +1106,27 @@ Ejemplo:
 }
 
 async function manejarPreguntaRapida(from, msg, session) {
-  const tipo = detectarPreguntaRapida(msg);
+  const tipos = detectarPreguntasRapidas(msg).slice(0, 3);
 
-  if (!tipo) {
+  if (!tipos.length) {
     return false;
   }
 
-  const respuesta = obtenerRespuestaPreguntaRapida(tipo);
+  const respuestas = tipos
+    .map((tipo) => obtenerRespuestaPreguntaRapida(tipo))
+    .filter(Boolean);
 
-  if (!respuesta) {
+  if (!respuestas.length) {
     return false;
   }
 
-  const procesoActivo = esProcesoActivoParaFAQ(session.step);
+  await responder(from, respuestas.join("\n\n"));
 
-  await responder(from, respuesta);
-
-  if (procesoActivo) {
-    updateSession(from, {
-      step: "FAQ_CONTINUAR",
-      faqReturnStep: session.step,
-      faqPreguntaRespondida: tipo,
-    });
-
+  if (esProcesoActivoParaFAQ(session.step)) {
     await responder(
       from,
-      `¿Quieres seguir con el proceso donde íbamos?
-
-1️⃣ Sí, continuar
-2️⃣ No, volver al menú`
+      `Para continuar con el proceso donde íbamos:\n\n${preguntaActualPorStep(session)}`
     );
-
     return true;
   }
 
@@ -951,15 +1135,7 @@ async function manejarPreguntaRapida(from, msg, session) {
     linea: "CRC",
   });
 
-  await responder(
-    from,
-    `¿Deseas que te ayudemos con tu proceso de licencia?
-
-1️⃣ Quiero sacar o renovar mi licencia
-2️⃣ Quiero información del proceso
-3️⃣ Hablar con asesor`
-  );
-
+  await responder(from, menuPrincipal());
   return true;
 }
 
@@ -1376,10 +1552,50 @@ ${preguntaActualPorStep(sessionActualizada)}`
     return;
   }
 
-  if (esIntencionCrc(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-    await responder(from, menuPrincipal());
+  if (esIntencionRenovacionClara(msg)) {
+    updateSession(from, {
+      linea: "CRC",
+      tramite: "Renovación / Refrendación",
+      comparendos: "No preguntado",
+      step: "CEDULA",
+    });
+
+    await responder(
+      from,
+      `Perfecto ✅
+
+Vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`
+    );
+    return;
+  }
+
+  if (esIntencionPrimeraVezClara(msg)) {
+    updateSession(from, {
+      linea: "CRC",
+      tramite: "Primera vez",
+      comparendos: "No preguntado",
+      step: "CEDULA",
+    });
+
+    await responder(
+      from,
+      `Perfecto ✅
+
+Vamos a revisar tu información en RUNT para orientarte con el proceso correspondiente.
+
+Por favor envíame tu número de cédula sin puntos ni espacios.`
+    );
+    return;
+  }
+
+  if (esIntencionAgendarClara(msg)) {
+    updateSession(from, {
+      linea: "CRC",
+      step: "DIA_CITA",
+    });
+    await responder(from, menuDiasCita());
     return;
   }
 
@@ -1387,6 +1603,19 @@ ${preguntaActualPorStep(sessionActualizada)}`
     resetSession(from);
     updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
     await responder(from, menuPrincipal());
+    return;
+  }
+
+  if (
+    esIntencionCrc(msg) &&
+    ["MENU_INICIAL", "MENU_PRINCIPAL"].includes(session.step)
+  ) {
+    updateSession(from, { step: "MENU_TRAMITE", linea: "CRC" });
+    await responder(from, menuTramite());
+    return;
+  }
+
+  if (await manejarFallbackIA(from, text, msg, session)) {
     return;
   }
 
@@ -1916,16 +2145,15 @@ De todas formas, vamos a revisar tu información en RUNT.`
     if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
       resetSession(from);
       updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-      await responder(from, menuPrincipal());
 
       await responder(
         from,
         `Entendido ✅
 
-Recuerda que puedes escribir *menu* cuando quieras retomar el proceso.`
-      );
+Cuando quieras retomar el proceso puedes escribir *menu*.
 
-      await responder(from, menuInicial());
+${menuPrincipal()}`
+      );
       return;
     }
 
