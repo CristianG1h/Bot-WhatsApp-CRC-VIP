@@ -647,6 +647,35 @@ Por favor escribe:
 // ─────────────────────────────────────────────
 
 const FAQ_KEYWORDS = {
+  quienes_somos: [
+    "quien son ustedes",
+    "quién son ustedes",
+    "quienes son ustedes",
+    "quiénes son ustedes",
+    "quien eres",
+    "quién eres",
+    "quienes son",
+    "quiénes son",
+    "que son ustedes",
+    "qué son ustedes",
+    "que hacen ustedes",
+    "qué hacen ustedes",
+    "ustedes que hacen",
+    "ustedes qué hacen",
+    "que servicios prestan",
+    "qué servicios prestan",
+    "que servicio ofrecen",
+    "qué servicio ofrecen",
+    "que es vip crc",
+    "qué es vip crc",
+    "que es un crc",
+    "qué es un crc",
+    "son un crc",
+    "son una escuela de conduccion",
+    "son una escuela de conducción",
+    "son una academia",
+  ],
+
   direccion: [
     "direccion",
     "dirección",
@@ -1201,6 +1230,26 @@ const FAQ_KEYWORDS = {
 };
 
 const FAQ_RESPONSES = {
+  quienes_somos: [
+    `Somos *VIP CRC Galerías* 🚗🏍️
+
+Somos un *Centro de Reconocimiento de Conductores (CRC)* en Bogotá. Realizamos las evaluaciones de aptitud requeridas para trámites de licencia de conducción, como renovación o refrendación y procesos de primera vez, según corresponda.
+
+También podemos orientarte sobre el proceso del CRC, categorías, requisitos, precios, horarios y ubicación. ✅`,
+
+    `Claro 😊 Somos *VIP CRC Galerías*, un Centro de Reconocimiento de Conductores ubicado en Bogotá.
+
+Nuestra función es realizar las evaluaciones y certificaciones del CRC para trámites relacionados con la licencia de conducción.
+
+Podemos ayudarte con información sobre renovación, primera vez, categorías, requisitos, precios, horarios y ubicación. 🚗🏍️`,
+
+    `Somos *VIP CRC Galerías* ✅
+
+Un CRC es un Centro de Reconocimiento de Conductores. Aquí se realizan las evaluaciones de aptitud necesarias para los trámites de licencia que correspondan.
+
+No somos una escuela de conducción ni expedimos directamente el plástico de la licencia; nuestro servicio corresponde al proceso de evaluación y certificación del CRC.`,
+  ],
+
   direccion: [
     `Claro ✅
 
@@ -1539,46 +1588,125 @@ function normalizarTextoFAQ(textoOriginal) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ñ\s]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function detectarPreguntasRapidas(textoOriginal) {
+// Palabras muy comunes que, por sí solas, no deberían activar una FAQ.
+// Sí aportan puntuación cuando aparecen dentro de una frase más específica.
+const FAQ_PALABRAS_GENERICAS = new Set([
+  "que",
+  "como",
+  "cuando",
+  "donde",
+  "cual",
+  "quien",
+  "quienes",
+  "quiero",
+  "necesito",
+  "puedo",
+  "debo",
+  "tengo",
+  "hacer",
+  "llevar",
+  "ustedes",
+  "licencia",
+  "pase",
+  "proceso",
+  "tramite",
+  "trámite",
+]);
+
+function contieneFraseCompleta(texto, frase) {
+  if (!texto || !frase) return false;
+  return (` ${texto} `).includes(` ${frase} `);
+}
+
+function puntuarKeywordFAQ(texto, keywordOriginal) {
+  const keyword = normalizarTextoFAQ(keywordOriginal);
+  if (!keyword) return 0;
+
+  const palabras = keyword.split(" ").filter(Boolean);
+
+  // Las frases completas tienen mucho más peso que una palabra aislada.
+  if (palabras.length >= 2 && contieneFraseCompleta(texto, keyword)) {
+    return 12 + Math.min(palabras.length * 2, 12);
+  }
+
+  // Una palabra aislada solo cuenta si aparece como palabra completa.
+  if (palabras.length === 1 && contieneFraseCompleta(texto, keyword)) {
+    if (FAQ_PALABRAS_GENERICAS.has(keyword)) return 1;
+    if (keyword.length >= 8) return 7;
+    if (keyword.length >= 5) return 6;
+    return 4;
+  }
+
+  return 0;
+}
+
+function puntuarFAQ(texto, keywords) {
+  let score = 0;
+  let coincidencias = 0;
+  let mejorCoincidencia = 0;
+
+  for (const keyword of keywords) {
+    const puntos = puntuarKeywordFAQ(texto, keyword);
+    if (!puntos) continue;
+
+    coincidencias += 1;
+    score += puntos;
+    mejorCoincidencia = Math.max(mejorCoincidencia, puntos);
+  }
+
+  // Pequeña bonificación cuando varias señales distintas apuntan al mismo tema.
+  if (coincidencias >= 2) score += Math.min(coincidencias - 1, 3) * 2;
+
+  return {
+    score,
+    coincidencias,
+    mejorCoincidencia,
+  };
+}
+
+function obtenerRankingFAQ(textoOriginal) {
   const texto = normalizarTextoFAQ(textoOriginal);
-  const tipos = [];
+  if (!texto) return [];
 
-  for (const [tipo, keywords] of Object.entries(FAQ_KEYWORDS)) {
-    const coincide = keywords.some((keyword) =>
-      texto.includes(normalizarTextoFAQ(keyword))
-    );
+  return Object.entries(FAQ_KEYWORDS)
+    .map(([tipo, keywords]) => ({
+      tipo,
+      ...puntuarFAQ(texto, keywords),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.mejorCoincidencia !== a.mejorCoincidencia) {
+        return b.mejorCoincidencia - a.mejorCoincidencia;
+      }
+      return b.coincidencias - a.coincidencias;
+    });
+}
 
-    if (coincide) {
-      tipos.push(tipo);
-    }
-  }
+function detectarPreguntasRapidas(textoOriginal) {
+  const ranking = obtenerRankingFAQ(textoOriginal);
+  if (!ranking.length) return [];
 
-  let resultado = tipos;
+  const mejor = ranking[0];
 
-  // Evita respuestas duplicadas cuando una FAQ específica ya resuelve la consulta.
-  if (resultado.includes("usa_gafas")) {
-    resultado = resultado.filter((tipo) => tipo !== "documentos");
-  }
+  // Umbral mínimo: evita que una palabra demasiado genérica dispare una FAQ.
+  if (mejor.score < 6) return [];
 
-  if (resultado.includes("incluye_plastico")) {
-    resultado = resultado.filter((tipo) => tipo !== "precios");
-  }
+  // Regla especial: si un servicio externo fue identificado claramente,
+  // debe ganar para no mezclarlo con precios, ubicación u otros temas.
+  const servicioExterno = ranking.find(
+    (item) => item.tipo === "servicio_no_ofrecido" && item.score >= 12
+  );
+  if (servicioExterno) return [servicioExterno.tipo];
 
-  if (resultado.includes("dos_categorias")) {
-    resultado = resultado.filter(
-      (tipo) => tipo !== "precios" && tipo !== "categorias"
-    );
-  }
-
-  if (resultado.includes("servicio_no_ofrecido")) {
-    resultado = ["servicio_no_ofrecido"];
-  }
-
-  return resultado;
+  // Devolvemos la FAQ con mayor puntuación. Así evitamos respuestas dobles
+  // o contradictorias por palabras que aparecen en varios temas.
+  return [mejor.tipo];
 }
 
 function detectarPreguntaRapida(textoOriginal) {
@@ -1597,6 +1725,7 @@ function obtenerRespuestaPreguntaRapida(tipo) {
 
 function obtenerContextoParaIA() {
   const seccionesFAQ = [
+    "quienes_somos",
     "cita_previa",
     "incluye_plastico",
     "resultado_runt",
