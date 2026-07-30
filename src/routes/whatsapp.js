@@ -364,6 +364,7 @@ function esPasoProtegidoDeIA(step) {
     "DIA_PERSONALIZADO",
     "HORARIO_CITA",
     "HORARIO_PERSONALIZADO",
+    "CONFIRMAR_NOMBRE_RUNT",
     "NOMBRE_CITA",
     "CEDULA_CITA",
     "TELEFONO_CITA",
@@ -399,6 +400,16 @@ function entradaEsperadaDelFlujo(session, msg, text) {
   }
 
   if (step === "CEDULA") return esCedulaValida(normalizarCedula(text));
+
+  if (step === "CONFIRMAR_NOMBRE_RUNT") {
+    return (
+      esRespuestaSi(msg) ||
+      esRespuestaNo(msg) ||
+      msg.includes("correcto") ||
+      msg.includes("corregir") ||
+      msg.includes("cambiar")
+    );
+  }
 
   if (step === "AGENDAR") {
     return esRespuestaSi(msg) || esRespuestaNo(msg) || msg.includes("agendar");
@@ -711,6 +722,60 @@ function agregarOpcionAgendarDeTodasFormas(respuesta) {
   return `${texto}\n\n3️⃣ Agendar de todas maneras`;
 }
 
+function obtenerNombreCompletoRunt(resultado) {
+  const auth = resultado?.data?.auth || {};
+  const nombres = String(auth.nombres || "").trim();
+  const apellidos = String(auth.apellidos || "").trim();
+
+  return `${nombres} ${apellidos}`.replace(/\s+/g, " ").trim();
+}
+
+function mensajeConfirmarNombreRunt(nombre) {
+  return `El nombre registrado en RUNT es:
+
+👤 *${nombre}*
+
+¿Este nombre es correcto para la cita?
+
+1️⃣ Sí, es correcto
+2️⃣ No, corregir nombre`;
+}
+
+async function continuarConNombreCita(from, session, mensajeBase = "") {
+  const nombreRunt = String(session?.nombreRunt || "").trim();
+
+  if (nombreRunt) {
+    updateSession(from, {
+      step: "CONFIRMAR_NOMBRE_RUNT",
+    });
+
+    const prefijo = String(mensajeBase || "").trim();
+    await responder(
+      from,
+      prefijo
+        ? `${prefijo}
+
+${mensajeConfirmarNombreRunt(nombreRunt)}`
+        : mensajeConfirmarNombreRunt(nombreRunt)
+    );
+    return;
+  }
+
+  updateSession(from, {
+    step: "NOMBRE_CITA",
+  });
+
+  const prefijo = String(mensajeBase || "").trim();
+  await responder(
+    from,
+    prefijo
+      ? `${prefijo}
+
+Ahora envíame tu *nombre completo*.`
+      : "Ahora envíame tu *nombre completo*."
+  );
+}
+
 async function consultarRuntYContinuar(from, cedulaOriginal) {
   const cedula = normalizarCedula(cedulaOriginal);
 
@@ -741,7 +806,15 @@ async function consultarRuntYContinuar(from, cedulaOriginal) {
     Stats.runtConsultado(from, cedula, "ok");
 
     const clasificacion = clasificarResultadoRunt(resultado);
+    const nombreRunt = obtenerNombreCompletoRunt(resultado);
     let respuesta = formatearResultadoWhatsApp(cedula, resultado);
+
+    updateSession(from, {
+      cedula,
+      cedulaCita: cedula,
+      nombreRunt: nombreRunt || null,
+      nombreCita: null,
+    });
 
     // Si la persona indicó primera vez, pero RUNT sí muestra licencias,
     // orientamos el flujo como renovación para no registrar un trámite incorrecto.
@@ -832,6 +905,9 @@ async function consultarRuntYContinuar(from, cedulaOriginal) {
     updateSession(from, {
       step: "CEDULA",
       cedula: null,
+      cedulaCita: null,
+      nombreRunt: null,
+      nombreCita: null,
     });
 
     await responder(
@@ -1482,6 +1558,11 @@ Ejemplo:
 *Después de las 2:00 p.m.*
 *En la mañana*`;
 
+    case "CONFIRMAR_NOMBRE_RUNT":
+      return session.nombreRunt
+        ? mensajeConfirmarNombreRunt(session.nombreRunt)
+        : "Ahora envíame tu *nombre completo*.";
+
     case "NOMBRE_CITA":
       return "Ahora envíame tu *nombre completo*.";
 
@@ -1510,7 +1591,7 @@ Ejemplo:
 👤 Nombre: *${datos.nombre || ""}*
 🪪 Cédula: *${datos.cedula || ""}*
 📞 Teléfono: *${datos.telefono || ""}*
-📧 Correo: *${datos.correo || ""}*
+📧 Correo: ${datos.correo || ""}
 🚗 Trámite: *${datos.tramite}*
 📅 Día: *${datos.dia}*
 ⏰ Horario: *${datos.horario}*
@@ -1620,7 +1701,7 @@ function resumenCita(datos) {
 👤 Nombre: *${datos.nombre}*
 🪪 Cédula: *${datos.cedula}*
 📞 Teléfono: *${datos.telefono}*
-📧 Correo: *${datos.correo}*
+📧 Correo: ${datos.correo}
 🚗 Trámite: *${datos.tramite || "Licencia de conducción"}*
 📅 Día: *${datos.dia || "Día por confirmar"}*
 ⏰ Horario aproximado: *${datos.horario}*
@@ -2850,7 +2931,6 @@ Domingos y festivos: no laboramos.`
     }
 
     updateSession(from, {
-      step: "NOMBRE_CITA",
       horarioCita: horario,
     });
 
@@ -2874,17 +2954,16 @@ Ejemplo:
       return;
     }
 
-    await responder(
+    await continuarConNombreCita(
       from,
+      getSession(from),
       `Perfecto ✅
 
 Día seleccionado:
 📅 *${session.diaCita || "Día por confirmar"}*
 
 Horario seleccionado:
-⏰ *${horario}*
-
-Ahora envíame tu *nombre completo*.`
+⏰ *${horario}*`
     );
     return;
   }
@@ -2898,19 +2977,84 @@ Ahora envíame tu *nombre completo*.`
     }
 
     updateSession(from, {
-      step: "NOMBRE_CITA",
       horarioCita: horarioPersonalizado,
     });
 
-    await responder(
+    await continuarConNombreCita(
       from,
+      getSession(from),
       `Listo ✅
 
 Horario solicitado:
-⏰ *${horarioPersonalizado}*
-
-Ahora envíame tu *nombre completo*.`
+⏰ *${horarioPersonalizado}*`
     );
+    return;
+  }
+
+  if (session.step === "CONFIRMAR_NOMBRE_RUNT") {
+    const nombreRunt = String(session.nombreRunt || "").trim();
+
+    if (!nombreRunt) {
+      updateSession(from, { step: "NOMBRE_CITA" });
+      await responder(from, "Ahora envíame tu *nombre completo*.");
+      return;
+    }
+
+    if (
+      msg === "1" ||
+      esRespuestaSi(msg) ||
+      msg.includes("correcto") ||
+      msg.includes("esta bien") ||
+      msg.includes("está bien")
+    ) {
+      const cedulaConsultada = normalizarCedula(session.cedula);
+
+      updateSession(from, {
+        step: "TELEFONO_CITA",
+        nombreCita: nombreRunt,
+        cedulaCita: esCedulaValida(cedulaConsultada)
+          ? cedulaConsultada
+          : session.cedulaCita,
+      });
+
+      await responder(
+        from,
+        `Perfecto ✅
+
+Usaremos el nombre registrado en RUNT:
+👤 *${nombreRunt}*
+
+También usaremos la cédula ya validada:
+🪪 *${cedulaConsultada || session.cedulaCita || ""}*
+
+Ahora envíame tu *número de teléfono de contacto*.`
+      );
+      return;
+    }
+
+    if (
+      msg === "2" ||
+      esRespuestaNo(msg) ||
+      msg.includes("corregir") ||
+      msg.includes("cambiar") ||
+      msg.includes("editar")
+    ) {
+      updateSession(from, {
+        step: "NOMBRE_CITA",
+        nombreRunt: null,
+        nombreCita: null,
+      });
+
+      await responder(
+        from,
+        `Sin problema ✅
+
+Escribe tu *nombre completo* exactamente como deseas que aparezca en la cita.`
+      );
+      return;
+    }
+
+    await responder(from, mensajeConfirmarNombreRunt(nombreRunt));
     return;
   }
 
@@ -3039,7 +3183,7 @@ Ahora envíame tu *correo electrónico* para enviarte la confirmación de la cit
 👤 Nombre: *${datos.nombre}*
 🪪 Cédula: *${datos.cedula}*
 📞 Teléfono: *${datos.telefono}*
-📧 Correo: *${datos.correo}*
+📧 Correo: ${datos.correo}
 🚗 Trámite: *${datos.tramite}*
 📅 Día: *${datos.dia}*
 ⏰ Horario: *${datos.horario}*
@@ -3140,7 +3284,7 @@ Tus datos quedaron registrados en esta conversación, pero en este momento no fu
 👤 Nombre: *${datos.nombre}*
 🪪 Cédula: *${datos.cedula}*
 📞 Teléfono: *${datos.telefono}*
-📧 Correo: *${datos.correo}*
+📧 Correo: ${datos.correo}
 🚗 Trámite: *${datos.tramite}*
 📅 Día: *${datos.dia}*
 ⏰ Horario: *${datos.horario}*
