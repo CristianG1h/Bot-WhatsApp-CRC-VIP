@@ -20,6 +20,7 @@ function crearSessionInicial(replyTo) {
     documentoSimit: null,
     simitTienePendientes: false,
     horarioCita: null,
+    nombreRunt: null,
     nombreCita: null,
     cedulaCita: null,
     telefonoCita: null,
