@@ -21,12 +21,12 @@ const {
   updateSession,
   resetSession,
   getAllSessions,
+  setReplyTarget,
 } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const {
   getMessage,
-  detectarPreguntaRapida,
   detectarPreguntasRapidas,
   obtenerRespuestaPreguntaRapida,
   esRespuestaSi,
@@ -118,32 +118,71 @@ iniciarVerificadorAsesor();
 
 const processedIncomingMessages = new Map();
 
-function obtenerKeyDuplicado(from, text, options = {}) {
-  if (options.messageId) {
-    return `id:${options.messageId}`;
-  }
+function normalizarTelefonoSesion(valor) {
+  return String(valor || "")
+    .replace(/^whatsapp:/i, "")
+    .replace(/[^0-9]/g, "");
+}
 
-  return `fallback:${String(from || "").trim()}::${String(text || "")
+function normalizarCedula(valor) {
+  return String(valor || "").replace(/\D/g, "");
+}
+
+function esPasoInicioOMenu(step) {
+  return ["MENU_INICIAL", "MENU_PRINCIPAL"].includes(step);
+}
+
+function obtenerKeyContenido(from, text) {
+  return `contenido:${normalizarTelefonoSesion(from)}::${String(text || "")
     .trim()
-    .toLowerCase()}::${options.source || "unknown"}`;
+    .toLowerCase()
+    .replace(/\s+/g, " ")}`;
 }
 
 function esMensajeDuplicado(from, text, options = {}) {
-  const key = obtenerKeyDuplicado(from, text, options);
   const now = Date.now();
-  const ttlMs = options.messageId ? 45000 : 2500;
+  const source = String(options.source || "unknown");
+  const messageId = options.messageId ? String(options.messageId) : null;
 
-  const lastTime = processedIncomingMessages.get(key);
+  if (messageId) {
+    const idKey = `id:${messageId}`;
+    const lastId = processedIncomingMessages.get(idKey);
 
-  if (lastTime && now - lastTime < ttlMs) {
-    return true;
+    if (lastId && now - lastId.time < 60000) {
+      return true;
+    }
+
+    processedIncomingMessages.set(idKey, {
+      time: now,
+      source,
+      messageId,
+    });
   }
 
-  processedIncomingMessages.set(key, now);
+  const contentKey = obtenerKeyContenido(from, text);
+  const lastContent = processedIncomingMessages.get(contentKey);
 
-  for (const [k, time] of processedIncomingMessages.entries()) {
-    if (now - time > 60000) {
-      processedIncomingMessages.delete(k);
+  if (lastContent && now - lastContent.time < 4000) {
+    const diferenteFuente = lastContent.source !== source;
+    const faltaIdentificador = !messageId || !lastContent.messageId;
+
+    // Si llega el mismo contenido desde Meta y Chatwoot, se considera duplicado.
+    // En la misma fuente permitimos respuestas iguales con IDs diferentes,
+    // porque pueden corresponder a pasos consecutivos del formulario.
+    if (diferenteFuente || faltaIdentificador) {
+      return true;
+    }
+  }
+
+  processedIncomingMessages.set(contentKey, {
+    time: now,
+    source,
+    messageId,
+  });
+
+  for (const [key, data] of processedIncomingMessages.entries()) {
+    if (now - Number(data?.time || 0) > 120000) {
+      processedIncomingMessages.delete(key);
     }
   }
 
@@ -216,6 +255,48 @@ function esIntencionAgendarClara(msg) {
   ].some((frase) => msg.includes(frase));
 }
 
+function esOpcionRenovacion(msg) {
+  return (
+    msg === "1" ||
+    msg === "renovacion" ||
+    msg === "renovación" ||
+    msg === "refrendacion" ||
+    msg === "refrendación" ||
+    msg === "renovar" ||
+    msg === "refrendar" ||
+    msg.includes("renovar licencia") ||
+    msg.includes("renovación de licencia") ||
+    msg.includes("renovacion de licencia")
+  );
+}
+
+function esOpcionPrimeraVez(msg) {
+  return (
+    msg === "2" ||
+    msg === "primera vez" ||
+    msg.includes("por primera vez") ||
+    msg.includes("primera licencia") ||
+    msg.includes("sacar licencia")
+  );
+}
+
+function mensajePreguntaComparendos() {
+  return `Antes de consultar RUNT, cuéntame:
+
+¿Tienes comparendos o multas pendientes?
+
+1️⃣ Sí
+2️⃣ No
+3️⃣ No estoy seguro`;
+}
+
+function mensajePreguntaAgendar() {
+  return `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
+
+1️⃣ Sí, quiero agendar
+2️⃣ No por ahora`;
+}
+
 function pareceDatoPersonal(textoOriginal) {
   const texto = String(textoOriginal || "").trim();
   const soloDigitos = texto.replace(/\D/g, "");
@@ -240,7 +321,8 @@ function pareceConsultaLibre(textoOriginal) {
 
   const iniciosPregunta = [
     "que ", "qué ", "como ", "cómo ", "cuando ", "cuándo ",
-    "donde ", "dónde ", "cual ", "cuál ", "quien ", "quién ",
+    "cuanto ", "cuánto ", "donde ", "dónde ", "cual ", "cuál ",
+    "quien ", "quién ",
     "quienes ", "quiénes ", "puedo ", "debo ", "tengo ",
     "necesito ", "quisiera saber", "me puedes explicar",
     "me puede explicar", "una pregunta",
@@ -263,12 +345,24 @@ function pareceConsultaLibre(textoOriginal) {
 
 function esPasoProtegidoDeIA(step) {
   return [
+    "MENU_TRAMITE",
+    "COMPARENDO",
     "CIA_AUTORIZACION",
     "CIA_DOCUMENTO",
     "CIA_FINAL",
+    "CONSULTANDO_SIMIT",
     "COMPARENDO_SIMIT_DOCUMENTO",
+    "CONSULTANDO_SIMIT_CRC",
     "SIMIT_DECISION_CRC",
+    "CEDULA",
+    "CONSULTANDO_RUNT",
+    "RUNT_ACTIVA",
+    "RUNT_SIN_LICENCIAS",
+    "RUNT_REVISION_MANUAL",
+    "AGENDAR",
+    "DIA_CITA",
     "DIA_PERSONALIZADO",
+    "HORARIO_CITA",
     "HORARIO_PERSONALIZADO",
     "NOMBRE_CITA",
     "CEDULA_CITA",
@@ -289,7 +383,9 @@ function entradaEsperadaDelFlujo(session, msg, text) {
   }
 
   if (step === "MENU_PRINCIPAL") return ["1", "2", "3"].includes(msg);
-  if (step === "MENU_TRAMITE") return ["1", "2", "3"].includes(msg);
+  if (step === "MENU_TRAMITE") {
+    return esOpcionRenovacion(msg) || esOpcionPrimeraVez(msg) || msg === "3";
+  }
   if (step === "MENU_INFORMACION") return /^[1-7]$/.test(msg);
   if (step === "FAQ_CONTINUAR") return esRespuestaSi(msg) || esRespuestaNo(msg);
 
@@ -302,14 +398,18 @@ function entradaEsperadaDelFlujo(session, msg, text) {
     );
   }
 
-  if (step === "CEDULA") return esCedulaValida(String(text || "").trim());
+  if (step === "CEDULA") return esCedulaValida(normalizarCedula(text));
 
   if (step === "AGENDAR") {
-    return (
-      ["1", "2", "si", "sí", "no"].includes(msg) ||
-      msg.includes("agendar") ||
-      msg.includes("cita")
-    );
+    return esRespuestaSi(msg) || esRespuestaNo(msg) || msg.includes("agendar");
+  }
+
+  if (step === "RUNT_ACTIVA") {
+    return ["1", "2", "3"].includes(msg) || msg.includes("asesor") || msg.includes("agendar");
+  }
+
+  if (["RUNT_SIN_LICENCIAS", "RUNT_REVISION_MANUAL"].includes(step)) {
+    return ["1", "2", "3"].includes(msg) || msg.includes("asesor") || msg.includes("agendar");
   }
 
   if (step === "DIA_CITA") return Boolean(detectarDia(msg));
@@ -351,10 +451,9 @@ function debeIntentarIA(session, msg, text) {
   if (entradaEsperadaDelFlujo(session, msg, text)) return false;
   if (esMensajeTrivialSinIA(msg)) return false;
 
-  // El orden del flujo ya intentó FAQ e intenciones claras antes de llegar aquí.
-  // Por eso cualquier mensaje restante con contenido útil pasa a la IA,
-  // aunque no empiece por “qué”, “cómo”, “quién”, etc.
-  return String(text || "").trim().length >= 4;
+  // La IA solo interviene en consultas libres. Los datos de formularios,
+  // opciones de menú y mensajes cortos se mantienen dentro del flujo normal.
+  return pareceConsultaLibre(text);
 }
 
 async function manejarFallbackIA(from, text, msg, session) {
@@ -460,6 +559,35 @@ function tienePendientesSimit(resultadoSimit) {
   return comparendos.length > 0 || multas.length > 0 || acuerdosPago.length > 0;
 }
 
+function ajustarRespuestaSimitConAcuerdos(respuesta, resultadoSimit) {
+  const acuerdosPago = Array.isArray(resultadoSimit?.acuerdosPago)
+    ? resultadoSimit.acuerdosPago
+    : [];
+
+  if (acuerdosPago.length === 0) return respuesta;
+
+  const nota = `⚠️ Además, SIMIT reporta *${acuerdosPago.length} acuerdo(s) de pago*. Te recomendamos revisarlos antes de finalizar el trámite de la licencia.`;
+
+  const ajustarTexto = (mensaje) => {
+    const texto = String(mensaje || "");
+
+    if (texto.includes("No registra comparendos ni multas pendientes")) {
+      return texto.replace(
+        /✅ No registra comparendos ni multas pendientes\.?/i,
+        nota
+      );
+    }
+
+    return `${texto}
+
+${nota}`;
+  };
+
+  return Array.isArray(respuesta)
+    ? respuesta.map(ajustarTexto)
+    : ajustarTexto(respuesta);
+}
+
 function limpiarMensajeSimitParaCRC(mensaje) {
   let texto = String(mensaje || "").trim();
 
@@ -494,7 +622,115 @@ async function enviarRespuestaSimitCRC(from, respuestaSimit) {
   }
 }
 
-async function consultarRuntYContinuar(from, cedula) {
+function obtenerDetallesRuntParaFlujo(resultado) {
+  const licencias = Array.isArray(resultado?.data?.licencias)
+    ? resultado.data.licencias
+    : [];
+
+  let licenciasValidas = licencias.filter(
+    (licencia) => String(licencia?.estadoLicencia || "").toUpperCase() === "ACTIVA"
+  );
+
+  if (licenciasValidas.length === 0) {
+    licenciasValidas = licencias;
+  }
+
+  const detalles = [];
+
+  for (const licencia of licenciasValidas) {
+    if (!Array.isArray(licencia?.detalleLicencia)) continue;
+
+    for (const detalle of licencia.detalleLicencia) {
+      if (!detalle?.categoria) continue;
+      detalles.push(detalle);
+    }
+  }
+
+  return detalles;
+}
+
+function clasificarResultadoRunt(resultado) {
+  const detalles = obtenerDetallesRuntParaFlujo(resultado);
+
+  if (detalles.length === 0) {
+    return "SIN_LICENCIAS";
+  }
+
+  const ahora = new Date();
+  ahora.setHours(0, 0, 0, 0);
+
+  let tieneFechaValida = false;
+  let requiereRenovacion = false;
+
+  for (const detalle of detalles) {
+    if (!detalle?.fechaVencimiento) continue;
+
+    const vence = new Date(detalle.fechaVencimiento);
+    if (Number.isNaN(vence.getTime())) continue;
+
+    tieneFechaValida = true;
+    vence.setHours(0, 0, 0, 0);
+
+    const diferenciaDias = Math.ceil(
+      (vence.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (diferenciaDias <= 30) {
+      requiereRenovacion = true;
+      break;
+    }
+  }
+
+  if (requiereRenovacion) return "RENOVACION_RECOMENDADA";
+  if (tieneFechaValida) return "ACTIVA";
+  return "REVISION_MANUAL";
+}
+
+function quitarCierreComercialRunt(respuesta) {
+  const texto = String(respuesta || "");
+  const separador = "\n━━━━━━━━━━━━━━━━━━━━\n";
+  const index = texto.indexOf(separador);
+
+  return index === -1 ? texto : texto.slice(0, index).trim();
+}
+
+function agregarOpcionAgendarDeTodasFormas(respuesta) {
+  const texto = String(respuesta || "");
+
+  if (texto.includes("3️⃣ Agendar de todas maneras")) {
+    return texto;
+  }
+
+  if (texto.includes("2️⃣ Volver al menú principal")) {
+    return texto.replace(
+      "2️⃣ Volver al menú principal",
+      "2️⃣ Volver al menú principal\n3️⃣ Agendar de todas maneras"
+    );
+  }
+
+  return `${texto}\n\n3️⃣ Agendar de todas maneras`;
+}
+
+async function consultarRuntYContinuar(from, cedulaOriginal) {
+  const cedula = normalizarCedula(cedulaOriginal);
+
+  if (!esCedulaValida(cedula)) {
+    updateSession(from, { step: "CEDULA" });
+    await responder(
+      from,
+      "⚠️ Por favor envía una cédula válida, solo números, sin puntos ni espacios."
+    );
+    return;
+  }
+
+  const sessionAntesConsulta = getSession(from);
+  const tramiteOriginal = sessionAntesConsulta.tramite;
+
+  updateSession(from, {
+    step: "CONSULTANDO_RUNT",
+    cedula,
+  });
+
   await responder(
     from,
     "🔎 Estoy consultando la información en RUNT.\nEsto puede tardar unos segundos..."
@@ -504,25 +740,106 @@ async function consultarRuntYContinuar(from, cedula) {
     const resultado = await consultarRuntPorCedula(cedula);
     Stats.runtConsultado(from, cedula, "ok");
 
-    const respuesta = formatearResultadoWhatsApp(cedula, resultado);
+    const clasificacion = clasificarResultadoRunt(resultado);
+    let respuesta = formatearResultadoWhatsApp(cedula, resultado);
+
+    // Si la persona indicó primera vez, pero RUNT sí muestra licencias,
+    // orientamos el flujo como renovación para no registrar un trámite incorrecto.
+    const tieneLicencias = clasificacion !== "SIN_LICENCIAS";
+    const tramiteAjustado =
+      tramiteOriginal === "Primera vez" && tieneLicencias
+        ? "Renovación / Refrendación"
+        : tramiteOriginal;
+
+    if (tramiteOriginal === "Primera vez" && tieneLicencias) {
+      await responder(
+        from,
+        "ℹ️ RUNT muestra que ya tienes una licencia registrada. Por eso el trámite corresponde a renovación o refrendación."
+      );
+    }
+
+    if (clasificacion === "ACTIVA") {
+      respuesta = agregarOpcionAgendarDeTodasFormas(respuesta);
+    }
+
+    if (clasificacion === "REVISION_MANUAL") {
+      respuesta = quitarCierreComercialRunt(respuesta);
+    }
 
     await responder(from, respuesta);
+
+    if (clasificacion === "ACTIVA") {
+      updateSession(from, {
+        step: "RUNT_ACTIVA",
+        cedula,
+        tramite: tramiteAjustado,
+      });
+      return;
+    }
+
+    if (clasificacion === "SIN_LICENCIAS" && tramiteAjustado !== "Primera vez") {
+      updateSession(from, {
+        step: "RUNT_SIN_LICENCIAS",
+        cedula,
+      });
+
+      await responder(
+        from,
+        `No aparecen licencias registradas para esta cédula.
+
+¿Qué deseas hacer?
+
+1️⃣ Hablar con un asesor
+2️⃣ Continuar como trámite de primera vez
+3️⃣ Volver al menú principal`
+      );
+      return;
+    }
+
+    if (clasificacion === "REVISION_MANUAL") {
+      updateSession(from, {
+        step: "RUNT_REVISION_MANUAL",
+        cedula,
+        tramite: tramiteAjustado,
+      });
+
+      await responder(
+        from,
+        `No fue posible determinar automáticamente la fecha de vencimiento.
+
+¿Qué deseas hacer?
+
+1️⃣ Hablar con un asesor
+2️⃣ Agendar de todas maneras
+3️⃣ Volver al menú principal`
+      );
+      return;
+    }
 
     updateSession(from, {
       step: "AGENDAR",
       cedula,
+      tramite: tramiteAjustado,
     });
+
+    if (!String(respuesta).toLowerCase().includes("deseas que te ayudemos a agendar")) {
+      await responder(from, mensajePreguntaAgendar());
+    }
   } catch (error) {
     console.error("❌ Error RUNT:", error.message);
     Stats.runtConsultado(from, cedula, "error");
 
+    updateSession(from, {
+      step: "CEDULA",
+      cedula: null,
+    });
+
     await responder(
       from,
-      "⚠️ En este momento no fue posible consultar RUNT.\nPor favor intenta más tarde o escribe *asesor*."
+      "⚠️ En este momento no fue posible consultar RUNT.\nPuedes intentarlo nuevamente o escribir *asesor*."
     );
   }
 }
-
 const DIAS_SEMANA = [
   "domingo",
   "lunes",
@@ -739,7 +1056,7 @@ function slotsBasePorFecha(fecha) {
   if (esSabado(fecha)) {
     return [
       { inicio: 7 * 60, fin: 9 * 60 },
-      { inicio: 9 * 60, fin: 11 * 60 },
+      { inicio: 9 * 60, fin: 11 * 60 + 30 },
     ];
   }
 
@@ -809,7 +1126,7 @@ Para dejar tu atención preconfirmada, primero elige el día en el que deseas as
 
 🕒 Horario de atención:
 Lunes a viernes: 7:00 a.m. a 3:30 p.m.
-Sábados: 7:00 a.m. a 11:00 a.m.
+Sábados: 7:00 a.m. a 11:30 a.m.
 Domingos y festivos: no laboramos.
 
 Responde con el número de la opción.`;
@@ -878,7 +1195,7 @@ function menuHorariosCita(fechaCita = null) {
 
 Nuestro horario es:
 Lunes a viernes: 7:00 a.m. a 3:30 p.m.
-Sábados: 7:00 a.m. a 11:00 a.m.
+Sábados: 7:00 a.m. a 11:30 a.m.
 Domingos y festivos: no laboramos.`;
   }
 
@@ -1001,16 +1318,21 @@ Fuera de ese horario puedes dejar tu consulta y un asesor la revisará en el pr�
 }
 
 function esSolicitudAsesor(msg) {
-  return (
-    msg.includes("asesor") ||
-    msg.includes("agente") ||
-    msg.includes("humano") ||
-    msg.includes("persona") ||
-    msg.includes("hablar con alguien") ||
-    msg.includes("quiero hablar") ||
-    msg.includes("atencion humana") ||
-    msg.includes("atención humana")
-  );
+  const texto = String(msg || "").trim().toLowerCase();
+
+  return [
+    "asesor",
+    "hablar con asesor",
+    "hablar con un asesor",
+    "quiero un asesor",
+    "necesito un asesor",
+    "agente humano",
+    "hablar con un agente",
+    "hablar con alguien",
+    "atencion humana",
+    "atención humana",
+    "quiero hablar con una persona",
+  ].some((frase) => texto === frase || texto.includes(frase));
 }
 
 function esProcesoActivoParaFAQ(step) {
@@ -1026,6 +1348,46 @@ function esProcesoActivoParaFAQ(step) {
   ].includes(step);
 }
 
+function puedeEvaluarPreguntaRapida(step, text) {
+  const pasosDeCaptura = [
+    "MENU_TRAMITE",
+    "COMPARENDO",
+    "CIA_AUTORIZACION",
+    "CIA_DOCUMENTO",
+    "CONSULTANDO_SIMIT",
+    "COMPARENDO_SIMIT_DOCUMENTO",
+    "CONSULTANDO_SIMIT_CRC",
+    "CEDULA",
+    "CONSULTANDO_RUNT",
+    "RUNT_ACTIVA",
+    "RUNT_SIN_LICENCIAS",
+    "RUNT_REVISION_MANUAL",
+    "AGENDAR",
+    "DIA_CITA",
+    "DIA_PERSONALIZADO",
+    "HORARIO_CITA",
+    "HORARIO_PERSONALIZADO",
+    "NOMBRE_CITA",
+    "CEDULA_CITA",
+    "TELEFONO_CITA",
+    "CORREO_CITA",
+    "CONFIRMAR_CITA",
+    "ENVIANDO_CORREO_CITA",
+  ];
+
+  if (!pasosDeCaptura.includes(step)) return true;
+
+  const texto = String(text || "").trim().toLowerCase();
+  const iniciosPregunta = [
+    "que ", "qué ", "como ", "cómo ", "cuando ", "cuándo ",
+    "cuanto ", "cuánto ", "donde ", "dónde ", "cual ", "cuál ",
+    "puedo ", "debo ", "por que ", "por qué ", "quisiera saber",
+    "me puedes explicar", "me puede explicar", "una pregunta",
+  ];
+
+  return texto.includes("?") || iniciosPregunta.some((inicio) => texto.startsWith(inicio));
+}
+
 function preguntaActualPorStep(session) {
   switch (session.step) {
     case "MENU_INICIAL":
@@ -1039,10 +1401,14 @@ function preguntaActualPorStep(session) {
       return menuTramite();
 
     case "COMPARENDO":
-      return "¿Tienes comparendos pendientes?\n\n1️⃣ Sí\n2️⃣ No\n3️⃣ No estoy seguro";
+      return mensajePreguntaComparendos();
 
     case "COMPARENDO_SIMIT_DOCUMENTO":
       return "Por favor envíame tu número de cédula sin puntos ni espacios para consultar SIMIT.";
+
+    case "CONSULTANDO_SIMIT":
+    case "CONSULTANDO_SIMIT_CRC":
+      return "Estamos consultando SIMIT. Por favor espera unos segundos.";
 
     case "SIMIT_DECISION_CRC":
       return `¿Qué deseas hacer?
@@ -1054,10 +1420,31 @@ function preguntaActualPorStep(session) {
       return "Por favor envíame tu número de cédula sin puntos ni espacios.";
 
     case "AGENDAR":
-      return `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
+      return mensajePreguntaAgendar();
 
-1️⃣ Sí, quiero agendar
-2️⃣ No por ahora`;
+    case "CONSULTANDO_RUNT":
+      return "Estamos consultando RUNT. Por favor espera unos segundos.";
+
+    case "RUNT_ACTIVA":
+      return `Tus categorías aparecen activas y no próximas a vencer.
+
+1️⃣ Hablar con asesor
+2️⃣ Volver al menú principal
+3️⃣ Agendar de todas maneras`;
+
+    case "RUNT_SIN_LICENCIAS":
+      return `No aparecen licencias registradas.
+
+1️⃣ Hablar con un asesor
+2️⃣ Continuar como trámite de primera vez
+3️⃣ Volver al menú principal`;
+
+    case "RUNT_REVISION_MANUAL":
+      return `Necesitamos revisar manualmente el resultado.
+
+1️⃣ Hablar con un asesor
+2️⃣ Agendar de todas maneras
+3️⃣ Volver al menú principal`;
 
     case "DIA_CITA":
       return menuDiasCita();
@@ -1177,6 +1564,10 @@ async function transferirAAsesor(
 ) {
   const asesorDisponible = esHorarioAsesorDisponible();
   Stats.asesorActivado(from, motivo);
+
+  await markNeedsAgent(from, motivo).catch((error) => {
+    console.error("⚠️ No se pudo marcar la conversación para asesor:", error.message);
+  });
 
   updateSession(from, {
     step: "HUMANO",
@@ -1430,8 +1821,6 @@ router.post("/chatwoot", async (req, res) => {
 });
 
 async function procesarMensaje(from, text, options = {}) {
-  Stats.mensajeRecibido(from);
-
   if (esMensajeDuplicado(from, text, options)) {
     console.log("⏭️ Mensaje duplicado ignorado:", {
       from,
@@ -1441,6 +1830,9 @@ async function procesarMensaje(from, text, options = {}) {
     });
     return;
   }
+
+  Stats.mensajeRecibido(from);
+  setReplyTarget(from, from);
 
   const session = getSession(from);
   const msg = text.toLowerCase().trim();
@@ -1534,6 +1926,13 @@ async function procesarMensaje(from, text, options = {}) {
     return;
   }
 
+  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
+    resetSession(from);
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
+    await responder(from, menuPrincipal());
+    return;
+  }
+
   if (session.step === "FAQ_CONTINUAR") {
     const returnStep = session.faqReturnStep || "MENU_PRINCIPAL";
 
@@ -1574,89 +1973,91 @@ ${preguntaActualPorStep(sessionActualizada)}`
     return;
   }
 
-  if (await manejarPreguntaRapida(from, msg, session)) {
+  if (
+    ["CONSULTANDO_RUNT", "CONSULTANDO_SIMIT", "CONSULTANDO_SIMIT_CRC"].includes(
+      session.step
+    )
+  ) {
+    await responder(from, preguntaActualPorStep(session));
     return;
   }
 
-  if (esIntencionCia(msg)) {
-    updateSession(from, { step: "CIA_MENU", linea: "CIA" });
-    await responder(from, menuCia());
-    return;
-  }
+  // Las intenciones generales solo se aplican al iniciar la conversación.
+  // De esta manera no interrumpen una consulta RUNT/SIMIT ni un formulario activo.
+  if (esPasoInicioOMenu(session.step)) {
+    if (esIntencionCia(msg)) {
+      updateSession(from, { step: "CIA_MENU", linea: "CIA" });
+      await responder(from, menuCia());
+      return;
+    }
 
-  if (esIntencionRenovacionClara(msg)) {
-    updateSession(from, {
-      linea: "CRC",
-      tramite: "Renovación / Refrendación",
-      comparendos: "No preguntado",
-      step: "CEDULA",
-    });
+    if (esIntencionRenovacionClara(msg)) {
+      updateSession(from, {
+        linea: "CRC",
+        tramite: "Renovación / Refrendación",
+        comparendos: "No preguntado",
+        step: "COMPARENDO",
+      });
 
-    await responder(
-      from,
-      `Perfecto ✅
+      await responder(from, `Perfecto ✅\n\n${mensajePreguntaComparendos()}`);
+      return;
+    }
 
-Vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
+    if (esIntencionPrimeraVezClara(msg)) {
+      updateSession(from, {
+        linea: "CRC",
+        tramite: "Primera vez",
+        comparendos: "No aplica",
+        step: "CEDULA",
+      });
+
+      await responder(
+        from,
+        `Perfecto ✅
+
+Primero vamos a revisar tu información en RUNT para confirmar el trámite correspondiente.
 
 Por favor envíame tu número de cédula sin puntos ni espacios.`
-    );
-    return;
-  }
+      );
+      return;
+    }
 
-  if (esIntencionPrimeraVezClara(msg)) {
-    updateSession(from, {
-      linea: "CRC",
-      tramite: "Primera vez",
-      comparendos: "No preguntado",
-      step: "CEDULA",
-    });
+    if (esIntencionAgendarClara(msg)) {
+      updateSession(from, {
+        linea: "CRC",
+        tramite: null,
+        comparendos: null,
+        step: "MENU_TRAMITE",
+      });
 
-    await responder(
-      from,
-      `Perfecto ✅
+      await responder(
+        from,
+        `Claro, con gusto te ayudamos a agendar ✅
 
-Vamos a revisar tu información en RUNT para orientarte con el proceso correspondiente.
+Antes de elegir el día y el horario, debemos identificar el trámite y revisar tu información en RUNT.
 
-Por favor envíame tu número de cédula sin puntos ni espacios.`
-    );
-    return;
-  }
+${menuTramite()}`
+      );
+      return;
+    }
 
-  if (esIntencionAgendarClara(msg)) {
-    updateSession(from, {
-      linea: "CRC",
-      step: "DIA_CITA",
-    });
-    await responder(from, menuDiasCita());
-    return;
-  }
-
-  if (["hola", "buenas", "menu", "menú", "inicio", "volver"].includes(msg)) {
-    resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
-    await responder(from, menuPrincipal());
-    return;
-  }
-
-  // La IA fallback debe evaluarse ANTES de la intención CRC genérica.
-  // Así, una consulta larga o especial que mencione palabras como "licencia"
-  // no se reduce automáticamente al menú de trámites.
-  if (await manejarFallbackIA(from, text, msg, session)) {
-    return;
+    if (esIntencionCrc(msg)) {
+      updateSession(from, { step: "MENU_TRAMITE", linea: "CRC" });
+      await responder(from, menuTramite());
+      return;
+    }
   }
 
   if (
-    esIntencionCrc(msg) &&
-    ["MENU_INICIAL", "MENU_PRINCIPAL"].includes(session.step)
+    puedeEvaluarPreguntaRapida(session.step, text) &&
+    (await manejarPreguntaRapida(from, msg, session))
   ) {
-    updateSession(from, { step: "MENU_TRAMITE", linea: "CRC" });
-    await responder(from, menuTramite());
     return;
   }
 
   if (session.step === "MENU_INICIAL") {
     resetSession(from);
-    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+    updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
     await responder(from, menuPrincipal());
     return;
   }
@@ -1706,6 +2107,11 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
       return;
     }
 
+    updateSession(from, {
+      step: "CONSULTANDO_SIMIT",
+      documentoSimit: documento,
+    });
+
     await responder(
       from,
       "🔎 Estoy consultando SIMIT. Esto puede tardar unos segundos..."
@@ -1715,7 +2121,10 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
       const resultado = await consultarSimitPorDocumento(documento);
       Stats.simitConsultado(from, documento, "ok");
 
-      const respuesta = formatearResultadoSimitWhatsApp(documento, resultado);
+      const respuesta = ajustarRespuestaSimitConAcuerdos(
+        formatearResultadoSimitWhatsApp(documento, resultado),
+        resultado
+      );
 
       if (Array.isArray(respuesta)) {
         for (const mensaje of respuesta) {
@@ -1734,9 +2143,14 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
       console.error("❌ Error SIMIT:", error.message);
       Stats.simitConsultado(from, documento, "error");
 
+      updateSession(from, {
+        step: "CIA_DOCUMENTO",
+        documentoSimit: null,
+      });
+
       await responder(
         from,
-        "⚠️ En este momento no fue posible consultar SIMIT.\nPor favor intenta más tarde o escribe *asesor*."
+        "⚠️ En este momento no fue posible consultar SIMIT.\nPuedes intentarlo nuevamente o escribir *asesor*."
       );
     }
 
@@ -1747,8 +2161,7 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
     if (
       msg === "1" ||
       msg.includes("asesor") ||
-      msg.includes("si") ||
-      msg.includes("sí")
+      esRespuestaSi(msg)
     ) {
       await transferirAAsesor(
         from,
@@ -1800,29 +2213,23 @@ Responde *ACEPTO* para autorizar a *CIA VIP* a consultar tu información en SIMI
   }
 
   if (session.step === "MENU_TRAMITE") {
-    if (msg === "1") {
+    if (esOpcionRenovacion(msg)) {
       updateSession(from, {
         tramite: "Renovación / Refrendación",
         comparendos: "No preguntado",
-        step: "CEDULA",
+        step: "COMPARENDO",
       });
 
-      await responder(
-        from,
-        `Perfecto ✅
+      await responder(from, `Perfecto ✅
 
-Vamos a revisar tu información en RUNT para validar el estado de tu licencia y orientarte con el trámite correcto.
-
-Por favor envíame tu número de cédula sin puntos ni espacios.`
-      );
-
+${mensajePreguntaComparendos()}`);
       return;
     }
 
-    if (msg === "2") {
+    if (esOpcionPrimeraVez(msg)) {
       updateSession(from, {
         tramite: "Primera vez",
-        comparendos: "No preguntado",
+        comparendos: "No aplica",
         step: "CEDULA",
       });
 
@@ -1830,17 +2237,16 @@ Por favor envíame tu número de cédula sin puntos ni espacios.`
         from,
         `Perfecto ✅
 
-Vamos a revisar tu información en RUNT para orientarte con el trámite correcto.
+Primero vamos a revisar tu información en RUNT para confirmar el trámite correspondiente.
 
 Por favor envíame tu número de cédula sin puntos ni espacios.`
       );
-
       return;
     }
 
     if (msg === "3") {
       resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
       await responder(from, menuPrincipal());
       return;
     }
@@ -1995,17 +2401,18 @@ Por favor envíame tu número de cédula sin puntos ni espacios.`
   }
 
   if (session.step === "COMPARENDO_SIMIT_DOCUMENTO") {
-    const documento = text.replace(/\s+/g, "").toUpperCase();
+    const documento = normalizarCedula(text);
 
-    if (documento.length < 5) {
+    if (!esCedulaValida(documento)) {
       await responder(
         from,
-        "⚠️ Por favor envía una cédula válida, sin puntos ni espacios."
+        "⚠️ Por favor envía una cédula válida, solo números, sin puntos ni espacios."
       );
       return;
     }
 
     updateSession(from, {
+      step: "CONSULTANDO_SIMIT_CRC",
       cedula: documento,
       documentoSimit: documento,
     });
@@ -2019,8 +2426,8 @@ Por favor envíame tu número de cédula sin puntos ni espacios.`
       const resultadoSimit = await consultarSimitPorDocumento(documento);
       Stats.simitConsultado(from, documento, "ok");
 
-      const respuestaSimit = formatearResultadoSimitWhatsApp(
-        documento,
+      const respuestaSimit = ajustarRespuestaSimitConAcuerdos(
+        formatearResultadoSimitWhatsApp(documento, resultadoSimit),
         resultadoSimit
       );
 
@@ -2147,27 +2554,113 @@ De todas formas, vamos a revisar tu información en RUNT.`
     return;
   }
 
-  if (session.step === "CEDULA") {
-    if (!esCedulaValida(text)) {
-      await responder(
+  if (session.step === "RUNT_ACTIVA") {
+    if (msg === "1" || msg.includes("asesor")) {
+      await transferirAAsesor(
         from,
-        "⚠️ Por favor envía solo el número de cédula, sin puntos ni espacios."
+        "Usuario solicitó asesor porque su licencia aparece activa en RUNT"
       );
       return;
     }
 
-    await consultarRuntYContinuar(from, text);
+    if (msg === "2" || msg.includes("volver") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    if (msg === "3" || msg.includes("agendar") || msg.includes("de todas maneras")) {
+      updateSession(from, { step: "DIA_CITA" });
+      await responder(from, menuDiasCita());
+      return;
+    }
+
+    await responder(from, preguntaActualPorStep(session));
+    return;
+  }
+
+  if (session.step === "RUNT_SIN_LICENCIAS") {
+    if (msg === "1" || msg.includes("asesor")) {
+      await transferirAAsesor(
+        from,
+        "RUNT no mostró licencias para una solicitud de renovación"
+      );
+      return;
+    }
+
+    if (
+      msg === "2" ||
+      msg.includes("primera vez") ||
+      msg.includes("agendar") ||
+      msg.includes("continuar")
+    ) {
+      updateSession(from, {
+        step: "DIA_CITA",
+        tramite: "Primera vez",
+      });
+      await responder(from, menuDiasCita());
+      return;
+    }
+
+    if (msg === "3" || msg.includes("volver") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    await responder(from, preguntaActualPorStep(session));
+    return;
+  }
+
+  if (session.step === "RUNT_REVISION_MANUAL") {
+    if (msg === "1" || msg.includes("asesor")) {
+      await transferirAAsesor(
+        from,
+        "RUNT no permitió determinar automáticamente la fecha de vencimiento"
+      );
+      return;
+    }
+
+    if (msg === "2" || msg.includes("agendar") || msg.includes("continuar")) {
+      updateSession(from, { step: "DIA_CITA" });
+      await responder(from, menuDiasCita());
+      return;
+    }
+
+    if (msg === "3" || msg.includes("volver") || msg.includes("menu")) {
+      resetSession(from);
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
+      await responder(from, menuPrincipal());
+      return;
+    }
+
+    await responder(from, preguntaActualPorStep(session));
+    return;
+  }
+
+  if (session.step === "CEDULA") {
+    const cedula = normalizarCedula(text);
+
+    if (!esCedulaValida(cedula)) {
+      await responder(
+        from,
+        "⚠️ Por favor envía una cédula válida, solo números. Puedes enviarla con o sin puntos."
+      );
+      return;
+    }
+
+    await consultarRuntYContinuar(from, cedula);
     return;
   }
 
   if (session.step === "AGENDAR") {
     if (
       msg === "1" ||
-      msg.includes("si") ||
-      msg.includes("sí") ||
+      esRespuestaSi(msg) ||
       msg.includes("agendar") ||
-      msg.includes("cita") ||
-      msg.includes("quiero")
+      msg.includes("quiero cita")
     ) {
       updateSession(from, {
         step: "DIA_CITA",
@@ -2177,9 +2670,9 @@ De todas formas, vamos a revisar tu información en RUNT.`
       return;
     }
 
-    if (msg === "2" || msg.includes("no") || msg.includes("menu")) {
+    if (msg === "2" || esRespuestaNo(msg) || msg.includes("menu")) {
       resetSession(from);
-      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC" });
+      updateSession(from, { step: "MENU_PRINCIPAL", linea: "CRC", replyTo: from });
 
       await responder(
         from,
@@ -2192,13 +2685,7 @@ ${menuPrincipal()}`
       return;
     }
 
-    await responder(
-      from,
-      `¿Deseas que te ayudemos a dejar tu atención preconfirmada?
-
-1️⃣ Sí, quiero agendar
-2️⃣ No por ahora`
-    );
+    await responder(from, mensajePreguntaAgendar());
     return;
   }
 
@@ -2329,7 +2816,7 @@ Ahora elige un horario aproximado de llegada.`
 
 Recuerda:
 Lunes a viernes: 7:00 a.m. a 3:30 p.m.
-Sábados: 7:00 a.m. a 11:00 a.m.
+Sábados: 7:00 a.m. a 11:30 a.m.
 Domingos y festivos: no laboramos.`
     );
     return;
@@ -2428,12 +2915,32 @@ Ahora envíame tu *nombre completo*.`
   }
 
   if (session.step === "NOMBRE_CITA") {
-    const nombre = text.trim();
+    const nombre = text.trim().replace(/\s+/g, " ");
 
-    if (nombre.length < 5 || !nombre.includes(" ")) {
+    if (nombre.length < 5 || !nombre.includes(" ") || /\d/.test(nombre)) {
       await responder(
         from,
-        "Por favor envíame tu *nombre completo*, con nombre y apellido."
+        "Por favor envíame tu *nombre completo*, con nombre y apellido y sin números."
+      );
+      return;
+    }
+
+    const cedulaConsultada = normalizarCedula(session.cedula);
+
+    if (esCedulaValida(cedulaConsultada)) {
+      updateSession(from, {
+        step: "TELEFONO_CITA",
+        nombreCita: nombre,
+        cedulaCita: cedulaConsultada,
+      });
+
+      await responder(
+        from,
+        `Gracias, *${nombre}* ✅
+
+Usaremos la misma cédula que ya fue validada en RUNT: *${cedulaConsultada}*.
+
+Ahora envíame tu *número de teléfono de contacto*.`
       );
       return;
     }
@@ -2447,13 +2954,13 @@ Ahora envíame tu *nombre completo*.`
       from,
       `Gracias, *${nombre}* ✅
 
-Ahora envíame tu *número de cédula*, sin puntos ni espacios.`
+Ahora envíame tu *número de cédula*, con o sin puntos.`
     );
     return;
   }
 
   if (session.step === "CEDULA_CITA") {
-    const cedula = text.replace(/\D/g, "");
+    const cedula = normalizarCedula(text);
 
     if (!esCedulaValida(cedula)) {
       await responder(
@@ -2580,13 +3087,13 @@ Vamos a tomar los datos nuevamente.`
       return;
     }
 
-    if (
-      msg !== "1" &&
-      !msg.includes("confirmar") &&
-      !msg.includes("si") &&
-      !msg.includes("sí") &&
-      !msg.includes("correcto")
-    ) {
+    const confirmacionValida =
+      msg === "1" ||
+      msg.includes("confirmar") ||
+      msg.includes("correcto") ||
+      esRespuestaSi(msg);
+
+    if (!confirmacionValida) {
       await responder(
         from,
         `Por favor responde:
@@ -2663,6 +3170,12 @@ Recuerda traer tu documento físico original.`
     );
 
     resetSession(from);
+    return;
+  }
+
+  // La IA se evalúa al final, después de intentar todas las reglas y pasos
+  // del flujo. Así nunca reemplaza una consulta RUNT/SIMIT ni un formulario.
+  if (await manejarFallbackIA(from, text, msg, session)) {
     return;
   }
 
