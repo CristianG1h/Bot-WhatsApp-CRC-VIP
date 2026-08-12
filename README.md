@@ -1,354 +1,428 @@
 <div align="center">
+
 <img src="https://img.shields.io/badge/WhatsApp-Bot-25D366?style=for-the-badge&logo=whatsapp&logoColor=white"/>
-<img src="https://img.shields.io/badge/Node.js-20.x-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
+<img src="https://img.shields.io/badge/Node.js-20+-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
 <img src="https://img.shields.io/badge/Express-5.x-000000?style=for-the-badge&logo=express&logoColor=white"/>
 <img src="https://img.shields.io/badge/Playwright-Headless-2EAD33?style=for-the-badge&logo=playwright&logoColor=white"/>
-<img src="https://img.shields.io/badge/Tesseract-OCR-5C5C5C?style=for-the-badge&logo=googlelens&logoColor=white"/>
-<img src="https://img.shields.io/badge/Groq-IA-F55036?style=for-the-badge&logo=OpenAI&logoColor=white"/>
+<img src="https://img.shields.io/badge/Tesseract-OCR-5C5C5C?style=for-the-badge"/>
+<img src="https://img.shields.io/badge/Groq-IA-F55036?style=for-the-badge"/>
 <img src="https://img.shields.io/badge/PostgreSQL-Dashboard-4169E1?style=for-the-badge&logo=postgresql&logoColor=white"/>
 
-# 🤖 Bot WhatsApp — CRC VIP & CIA VIP
+# Bot WhatsApp — CRC VIP & CIA VIP
 
-### Asistente automatizado para *Licencias de Conducción* y *Comparendos SIMIT*
+### Licencias de conducción · RUNT · SIMIT · Citas · Chatwoot · IA
 
-🟢 En producción &nbsp;|&nbsp; 🟢 Doble línea de negocio &nbsp;|&nbsp; 🟢 Consulta RUNT en tiempo real &nbsp;|&nbsp; 🟢 Consulta SIMIT con Playwright &nbsp;|&nbsp; 🟢 Fallback con IA (Groq) &nbsp;|&nbsp; 🟢 Dashboard de estadísticas &nbsp;|&nbsp; 🟢 Integración Chatwoot
+**En producción · Doble línea de negocio · Dashboard · Asesor humano · Meta/Twilio**
 
 </div>
----
 
-## 📋 Descripción
+> **Documentación actualizada: 12 de agosto de 2026.**
 
-Chatbot automatizado para **VIP CRC Galerías** y **CIA VIP** que atiende a los usuarios directamente por WhatsApp.
+## Descripción
 
-El bot opera como primer punto de contacto: guía al usuario paso a paso, consulta su información oficial en el **RUNT** (licencias de conducción) y en el **SIMIT** (comparendos y multas), calcula descuentos vigentes por curso, agenda citas y envía la confirmación por correo, y cuando el usuario requiere atención personalizada **transfiere al equipo humano** (con registro opcional en **Chatwoot**). Preguntas fuera del flujo estructurado pueden resolverse con un **fallback de IA (Groq)** entrenado con el contexto oficial de CRC. Toda la actividad queda disponible en un **dashboard web protegido** con estadísticas en tiempo real.
+Bot automatizado para **VIP CRC Galerías** y **CIA VIP** que atiende usuarios por WhatsApp y los orienta según dos líneas principales:
 
----
+- **CRC:** trámites relacionados con licencias de conducción, consulta RUNT, orientación y agendamiento.
+- **CIA VIP:** consulta de comparendos/SIMIT y orientación sobre cursos y descuentos aplicables.
 
-## 🏗️ Arquitectura
+El sistema combina un flujo conversacional controlado con servicios externos, dashboard de estadísticas, transferencia a asesor humano y un fallback de IA para preguntas que no pertenecen a pasos críticos.
 
-```
+## Arquitectura
+
+```text
 Usuario WhatsApp
-      ↓
-Meta Cloud API  /  Twilio WhatsApp
-      ↓
-Servidor Node.js (Express)  :3000
-      ↓
-┌───────────────────────────────────────────────────┐
-│                    /webhook                        │
-│  ┌────────────────────────────────────────────┐   │
-│  │  Sesiones en memoria · Rate limiting        │   │
-│  │  Flujo conversacional (steps) · Anti-dup    │   │
-│  └────────────────────────────────────────────┘   │
-│      ↓         ↓          ↓         ↓        ↓     │
-│  runt.js   simit.js    ai.js    email.js  chatwoot.js│
-│ (Axios+OCR)(Playwright)(Groq)  (Google    (Notas    │
-│                                 Script)    y asesor)│
-└───────────────────────────────────────────────────┘
-      ↓            ↓          ↓          ↓        ↓
-  RUNT API   fcm.org.co   Groq API   Apps Script  Chatwoot
- (portal      /simit      (LLM)      (envío de     API
-  público)  (scraping                 correos)
-             headless)
+      │
+      ├── Meta Cloud API
+      └── Twilio WhatsApp
+             │
+             ▼
+      Node.js + Express
+             │
+             ├── Flujo conversacional / sesiones
+             ├── Consulta RUNT + OCR
+             ├── Consulta SIMIT + Playwright
+             ├── Agendamiento y correo
+             ├── Fallback IA con Groq
+             ├── Integración Chatwoot
+             ├── Anti-spam / deduplicación
+             └── Estadísticas
+                      │
+                      ├── PostgreSQL
+                      └── fallback en memoria
 
-              stats.js  →  PostgreSQL (o memoria)  →  Dashboard (/dashboard)
+Dashboard: / y /dashboard
 ```
 
-> No requiere base de datos para operar: sesiones y caché de RUNT viven en memoria/archivos JSON. **PostgreSQL es opcional** y solo se usa para persistir las estadísticas del dashboard entre despliegues; si `DATABASE_URL` no está configurada, el dashboard funciona igual pero en memoria.
+## Flujo CRC actualizado
 
----
-
-## 🔄 Flujo del Usuario
-
+```text
+Usuario escribe
+     │
+     ▼
+Menú inicial
+     │
+     ├── CRC - Licencias
+     │      │
+     │      ├── Tipo de trámite
+     │      ├── Validaciones del flujo
+     │      ├── Cédula
+     │      └── Consulta RUNT
+     │              │
+     │              ├── Estado de licencias
+     │              ├── Categorías / vigencia
+     │              ├── Nombre registrado en RUNT
+     │              └── Oferta/orientación
+     │
+     │      ¿Desea agendar?
+     │              │
+     │              ▼
+     │        Día → Horario
+     │              │
+     │              ▼
+     │   Confirmar nombre obtenido del RUNT
+     │        │                   │
+     │       Sí                  No
+     │        │                   │
+     │        │            Escribir nombre correcto
+     │        │                   │
+     │        └──────────┬────────┘
+     │                   ▼
+     │        Teléfono → Correo → Confirmación
+     │                   │
+     │                   └── correo de cita
+     │
+     └── CIA VIP - Comparendos
+            │
+            ├── autorización
+            ├── documento/placa
+            ├── consulta SIMIT
+            └── detalle + orientación/descuentos
 ```
-1. Usuario escribe al número
-        ↓
-2. Bot detecta saludo → Menú inicial
-        ↓
-   ┌─────────────────────┬──────────────────────┐
-   │  1️⃣ CRC             │  2️⃣ CIA VIP           │
-   │  Licencias          │  Comparendos / SIMIT  │
-   └─────────────────────┴──────────────────────┘
-        ↓                         ↓
-   Menú CRC                 Autorización
-   ┌──────────┐              ACEPTO
-   │Trámite   │                ↓
-   │Información│          Documento/placa
-   │Asesor    │                ↓
-   └──────────┘         Consulta SIMIT
-        ↓               (Playwright)
-   Comparendos →              ↓
-   Asistencia  →      Detalle + descuentos
-   Cédula      →      50% / 25% calculados
-        ↓                     ↓
-   Consulta RUNT        Oferta asesor CIA VIP
-   (Captcha + OCR)
-        ↓
-   Estado licencia + oferta
-        ↓
-   ¿Agendar cita? ──────► Día → Horario → Nombre →
-        │                 Cédula → Teléfono → Correo →
-        │                 Confirmación → Envío de correo
-        ↓
-   Asesor CRC VIP (Chatwoot)
 
-  En cualquier paso libre, si el mensaje no coincide con
-  el flujo esperado, la IA (Groq) intenta responder usando
-  el contexto oficial de CRC antes de derivar a un asesor.
+## Mejora reciente: nombre y cédula desde RUNT
+
+El flujo de citas fue optimizado para evitar pedir datos que el sistema ya conoce.
+
+Después de una consulta RUNT exitosa:
+
+1. el bot obtiene los nombres y apellidos disponibles en la respuesta;
+2. conserva la cédula que ya fue validada;
+3. después de seleccionar día y horario muestra el nombre registrado en RUNT;
+4. pregunta si ese nombre es correcto para la cita;
+5. si el usuario responde **sí**, reutiliza automáticamente nombre y cédula y continúa directamente con el teléfono;
+6. si responde **no**, solicita el nombre completo corregido antes de continuar.
+
+El paso `CONFIRMAR_NOMBRE_RUNT` está protegido frente al fallback de IA para evitar que una respuesta generativa altere datos críticos del agendamiento.
+
+## Consulta RUNT
+
+- Consulta información del conductor y sus licencias.
+- Utiliza OCR con **Tesseract.js** para resolver el captcha necesario dentro del flujo configurado.
+- Clasifica categorías y estados de licencia.
+- Distingue escenarios de primera vez y renovación según la información encontrada.
+- Puede generar orientación/oferta relacionada con el estado del trámite.
+- Maneja reintentos cuando la lectura OCR o la consulta presentan errores.
+- Conserva caché para reducir consultas repetidas.
+- Incluye un límite diario configurable para proteger el servicio.
+
+## Consulta SIMIT / CIA VIP
+
+El flujo CIA utiliza **Playwright** para consultar el portal correspondiente y procesar información de comparendos.
+
+Puede:
+
+- consultar por documento o placa según el flujo;
+- extraer comparendos, multas o resoluciones disponibles;
+- diferenciar tipos de comparendo para la lógica operativa;
+- calcular orientación sobre descuentos del 50 % o 25 % cuando aplique según las reglas configuradas;
+- dirigir al usuario a un asesor CIA cuando requiere continuación humana.
+
+## Agendamiento de citas
+
+El flujo valida progresivamente:
+
+- día;
+- horario;
+- nombre confirmado desde RUNT o corregido por el usuario;
+- cédula ya validada o capturada cuando sea necesario;
+- teléfono;
+- correo;
+- confirmación final.
+
+Cuando la integración está configurada, el bot envía el correo de la cita mediante **Google Apps Script**.
+
+Si el correo falla, el flujo conserva los datos y puede informar al usuario que la confirmación será continuada por un asesor.
+
+## Sesiones y normalización de teléfonos
+
+Las sesiones fueron reforzadas para que un mismo usuario no termine con estados duplicados por diferencias de formato.
+
+El identificador interno normaliza valores como:
+
+```text
+whatsapp:+573001234567
++57 300 123 4567
+573001234567
 ```
 
----
+Esto permite mantener una misma sesión lógica independientemente del formato usado por Meta, Twilio o una integración intermedia.
 
-## ✨ Funcionalidades
+La sesión conserva, entre otros datos:
 
-### 🪪 Consulta RUNT en tiempo real
-- Genera y resuelve el captcha del RUNT automáticamente con **Tesseract.js (OCR)**
-- Autentica con la API oficial y obtiene el estado del conductor y sus licencias
-- Clasifica categorías por tipo (moto / carro) y estado (activa / próxima / vencida)
-- Genera una oferta de renovación personalizada con precios y descuentos vigentes
-- Hasta **5 reintentos** automáticos si el OCR o la API fallan
+- paso actual;
+- línea CRC/CIA;
+- trámite;
+- cédula;
+- datos SIMIT;
+- horario de cita;
+- `nombreRunt`;
+- nombre definitivo de cita;
+- teléfono y correo;
+- estado de asesor;
+- destino real de respuesta (`replyTo`).
 
-### 🚦 Consulta SIMIT con Playwright
-- Navega el portal oficial de la FCM de forma headless (sin interfaz)
-- Extrae comparendos, multas y resoluciones por cédula o placa
-- Calcula automáticamente si aplica descuento del **50 % o 25 %** por curso
-- Usa las tarifas oficiales vigentes para todas las categorías (A, B, C, D, E, H, I01, I02)
-- Distingue entre comparendos presenciales y fotomultas para los plazos de descuento
+## Asesor humano y Chatwoot
 
-### 🧠 Fallback conversacional con IA (Groq)
-- Cuando el mensaje del usuario no coincide con el flujo estructurado, se consulta a **Groq** (modelo configurable, por defecto `llama-3.3-70b-versatile`)
-- El prompt se construye con el contexto oficial de CRC (`utils/aiPrompt.js` + `utils/messages.js`) y el estado actual de la sesión
-- La respuesta se exige en **JSON estricto** (`respuesta`, `confianza`, `tema`) para poder validarla antes de enviarla
-- Datos sensibles (correos, números largos) se enmascaran antes de enviarse a la IA
-- Pasos críticos del flujo (citas, documentos, transferencia a asesor) quedan **protegidos** y nunca se delegan a la IA
-- Si `GROQ_API_KEY` no está configurada, el bot sigue funcionando normalmente sin este fallback
+- El bot puede derivar usuarios a asesor.
+- Mantiene estados para saber si el asesor está disponible/activo y si el bot debe permanecer pausado.
+- Puede registrar actividad en Chatwoot cuando la integración está habilitada.
+- Crea o reutiliza contacto/conversación según la lógica configurada.
+- Puede reactivar el bot después de un período de inactividad del asesor.
+- Los pasos críticos del formulario permanecen controlados por lógica determinística.
 
-### 📅 Agendamiento de citas con confirmación por correo
-- Flujo guiado: día → horario → nombre → cédula → teléfono → correo → confirmación
-- Valida cada dato (cédula, teléfono, correo) antes de avanzar
-- Al confirmar, envía automáticamente un correo de notificación vía **Google Apps Script** (`services/email.js`)
-- Si el envío falla, la solicitud queda registrada igualmente y se informa al usuario que un asesor la confirmará
+## Fallback conversacional con IA
 
-### 💬 Integración con Chatwoot
-- Registra automáticamente cada mensaje entrante y saliente como nota privada en la conversación del contacto
-- Crea o reutiliza el contacto y la conversación en Chatwoot a partir del número de WhatsApp
-- Marca la conversación cuando el usuario necesita un asesor humano
-- Es completamente opcional: se activa solo si `CHATWOOT_ENABLED=true` y las variables de conexión están configuradas
+Cuando `GROQ_API_KEY` está configurada, el bot puede utilizar Groq para responder preguntas libres que no encajan en el flujo estructurado.
 
-### 📊 Dashboard de estadísticas
-- Panel web en `/` y `/dashboard`, protegido con **autenticación básica** (`DASHBOARD_USER` / `DASHBOARD_PASS`)
-- Muestra conversaciones únicas, mensajes recibidos/enviados, consultas RUNT y SIMIT, citas preconfirmadas, transferencias a asesor, mensajes no reconocidos, duplicados ignorados y bloqueos por rate limit
-- Gráfica de actividad por día y por hora (zona horaria `America/Bogota`), con historial de últimas interacciones y buscador
-- Se sirve con **preview enriquecido** (Open Graph / Twitter Card) cuando el enlace lo comparte un bot de WhatsApp, Facebook, Twitter, Telegram, LinkedIn, Discord o Slack, sin exponer el panel real
-- Persiste en **PostgreSQL** si `DATABASE_URL` está configurada; si no, funciona en memoria (se reinicia con el servidor)
+La IA:
 
-### 🤖 Gestión de sesiones y flujo conversacional
-- Cada número de teléfono mantiene su propio estado de conversación en memoria
-- Palabras clave globales (`hola`, `menu`, `volver`) reinician el flujo en cualquier momento
-- Detecta preguntas frecuentes e intención de trámite (CRC vs. CIA VIP) desde el primer mensaje
-- Reactivación automática del bot si el asesor humano queda inactivo más de 10 minutos
-- Transferencia limpia al asesor humano con recopilación de datos del usuario
+- recibe contexto del negocio y del estado de conversación;
+- utiliza un modelo configurable;
+- devuelve una respuesta estructurada para ser validada antes del envío;
+- recibe datos sensibles enmascarados cuando corresponde;
+- **no interviene en pasos críticos** como documentos, confirmaciones de nombre, citas o transferencias al asesor.
 
-### 🛡️ Protección anti-spam
-- Límite de **20 mensajes por minuto** por usuario (hasta **45** durante el llenado de formularios como agendamiento de citas)
-- Detección de mensajes duplicados (por `messageId` o por contenido+origen) para evitar respuestas repetidas
-- Bloqueo temporal automático si se excede el límite
+Si Groq no está configurado, el bot continúa funcionando con sus flujos normales.
 
-### ⚡ Caché y límites de consulta RUNT
-- Resultados cacheados durante **15 días** para reducir carga sobre la API oficial
-- Límite configurable de **150 consultas por día**
-- Delay aleatorio entre intentos (5 – 12 segundos) para evitar detección
+## Dashboard de estadísticas
 
-### 📤 Compatibilidad dual de proveedores
-- **Meta Cloud API** — responde directo vía Graph API
-- **Twilio WhatsApp** — divide automáticamente mensajes largos en partes de máximo 1 300 caracteres
+Disponible en:
 
----
+```text
+/
+/dashboard
+```
 
-## ⚙️ Tecnologías
+Protegido mediante `DASHBOARD_USER` y `DASHBOARD_PASS`.
+
+Incluye métricas como:
+
+- conversaciones únicas;
+- mensajes recibidos/enviados;
+- consultas RUNT;
+- consultas SIMIT;
+- citas preconfirmadas;
+- transferencias a asesor;
+- mensajes no reconocidos;
+- duplicados ignorados;
+- bloqueos por rate limit;
+- actividad por día/hora;
+- últimas interacciones;
+- buscador y filtros.
+
+Las fechas del dashboard se manejan con referencia a `America/Bogota`.
+
+Cuando el enlace es consultado por bots de previsualización de WhatsApp, Facebook, Telegram, LinkedIn, Discord, Slack u otras plataformas soportadas, se muestra una tarjeta pública sin exponer el dashboard real.
+
+## Persistencia
+
+PostgreSQL es opcional para la operación conversacional, pero permite conservar las estadísticas entre reinicios/despliegues.
+
+```env
+DATABASE_URL=...
+```
+
+Sin esa variable, el dashboard puede funcionar con almacenamiento temporal en memoria.
+
+## Anti-spam y deduplicación
+
+- Rate limiting por número de teléfono.
+- Límite ampliado durante pasos de formularios para no bloquear a un usuario que está completando datos legítimamente.
+- Deduplicación por identificador de mensaje o combinación de contenido/origen.
+- Bloqueo temporal cuando se supera el límite configurado.
+- Prevención de respuestas duplicadas ante reintentos de webhooks.
+
+## Caché RUNT
+
+El sistema utiliza caché para reducir consultas repetidas al RUNT y proteger la disponibilidad del flujo.
+
+La implementación actual contempla:
+
+- resultados cacheados por un período prolongado configurable;
+- límite diario de consultas;
+- reintentos controlados;
+- esperas entre intentos cuando se requiere.
+
+## Compatibilidad de proveedores
+
+### Meta Cloud API
+
+Canal principal de WhatsApp mediante Graph API.
+
+### Twilio WhatsApp
+
+Existe compatibilidad con Twilio y manejo de mensajes largos mediante división controlada cuando corresponde.
+
+## Tecnologías
 
 | Tecnología | Uso |
 |---|---|
-| **Node.js 20.x** | Runtime del servidor |
-| **Express 5** | Framework HTTP y servidor del dashboard |
-| **Playwright (Chromium)** | Scraping headless del portal SIMIT |
-| **Tesseract.js** | OCR para resolver captchas del RUNT |
-| **Axios** | Peticiones HTTP a la API del RUNT y a Groq |
-| **Groq API** | Fallback conversacional con IA (LLM) |
-| **PostgreSQL (`pg`)** | Persistencia opcional de estadísticas del dashboard |
-| **Twilio SDK** | Envío de mensajes por Twilio WhatsApp |
-| **WhatsApp Cloud API (Meta)** | Envío de mensajes por Meta |
-| **Chatwoot API** | Registro de conversaciones y transferencia a asesor |
-| **Google Apps Script** | Envío de correos de confirmación de citas |
-| **Nodemailer** | Utilidades de correo (soporte adicional) |
+| Node.js | Runtime |
+| Express 5 | Servidor HTTP |
+| Playwright | Automatización SIMIT |
+| Tesseract.js | OCR de captcha RUNT |
+| Axios | Peticiones HTTP |
+| Groq | Fallback IA |
+| PostgreSQL (`pg`) | Persistencia de estadísticas |
+| Twilio SDK | Canal WhatsApp alternativo |
+| Meta Cloud API | Canal WhatsApp principal |
+| Chatwoot API | Atención humana/trazabilidad |
+| Google Apps Script | Correo de citas |
+| Nodemailer | Soporte adicional de correo |
 
----
+## Estructura principal
 
-## 🗂️ Estructura del Proyecto
-
+```text
+Bot-WhatsApp-CRC-VIP/
+├── package.json
+├── package-lock.json
+└── src/
+    ├── server.js
+    ├── config.js
+    ├── routes/
+    │   ├── whatsapp.js
+    │   └── health.js
+    ├── services/
+    │   ├── runt.js
+    │   ├── simit.js
+    │   ├── ai.js
+    │   ├── email.js
+    │   ├── stats.js
+    │   ├── chatwoot.js
+    │   ├── whatsapp.js
+    │   └── twilio.js
+    ├── utils/
+    │   ├── sessions.js
+    │   ├── rateLimit.js
+    │   ├── validation.js
+    │   ├── messages.js
+    │   └── aiPrompt.js
+    └── public/
+        ├── dashboard.html
+        ├── css/
+        └── js/
 ```
-📦 bot-whatsapp-crc-vip
-├── 📄 package.json
-└── 📁 src
-    ├── 📄 server.js              ← Entrada principal, dashboard y API de stats ⭐
-    ├── 📄 config.js              ← Variables de entorno
-    ├── 📁 routes
-    │   ├── 📄 whatsapp.js        ← Webhook principal y flujo conversacional ⭐
-    │   └── 📄 health.js          ← Healthcheck
-    ├── 📁 services
-    │   ├── 📄 runt.js            ← Consulta RUNT (Axios + Tesseract OCR) ⭐
-    │   ├── 📄 simit.js           ← Consulta SIMIT (Playwright headless) ⭐
-    │   ├── 📄 ai.js              ← Fallback conversacional con Groq
-    │   ├── 📄 email.js           ← Envío de correos de confirmación de citas
-    │   ├── 📄 stats.js           ← Estadísticas del dashboard (PostgreSQL o memoria)
-    │   ├── 📄 chatwoot.js        ← Integración con Chatwoot (notas y asesor)
-    │   ├── 📄 whatsapp.js        ← Envío a Graph API (Meta)
-    │   └── 📄 twilio.js          ← Envío vía Twilio
-    ├── 📁 utils
-    │   ├── 📄 sessions.js        ← Gestión de sesiones en memoria
-    │   ├── 📄 rateLimit.js       ← Anti-spam por usuario
-    │   ├── 📄 validation.js      ← Limpieza y validación de cédulas
-    │   ├── 📄 messages.js        ← Respuestas, FAQ y contexto para la IA
-    │   └── 📄 aiPrompt.js        ← Construcción del prompt del sistema para Groq
-    └── 📁 public                 ← Dashboard web
-        ├── 📄 dashboard.html
-        ├── 📁 css/dashboard.css
-        └── 📁 js/dashboard.js
-```
 
-> **Archivos generados en ejecución** (no se versionan):
-> `cache-runt.json` · `daily-limit.json` · `captcha.png` · `simit-error.png`
+Archivos generados en ejecución, según el flujo, pueden incluir cachés, límites diarios, capturas de captcha o imágenes de diagnóstico. No deben versionarse si contienen información temporal.
 
----
+## Variables de entorno
 
-## 🔐 Variables de Entorno
+| Variable | Uso |
+|---|---|
+| `PORT` | Puerto del servidor |
+| `VERIFY_TOKEN` | Verificación webhook Meta |
+| `WHATSAPP_TOKEN` | Token Meta |
+| `PHONE_NUMBER_ID` | Número Meta |
+| `TWILIO_ACCOUNT_SID` | Cuenta Twilio opcional |
+| `TWILIO_AUTH_TOKEN` | Token Twilio opcional |
+| `TWILIO_WHATSAPP_FROM` | Número de salida Twilio |
+| `GROQ_API_KEY` | Fallback IA opcional |
+| `GROQ_MODEL` | Modelo Groq |
+| `DASHBOARD_USER` | Usuario dashboard |
+| `DASHBOARD_PASS` | Contraseña dashboard |
+| `DATABASE_URL` | PostgreSQL opcional |
+| `PUBLIC_URL` | URL pública del servicio |
+| `GOOGLE_SCRIPT_EMAIL_URL` | Apps Script de correo |
+| `GOOGLE_SCRIPT_EMAIL_KEY` | Clave del Apps Script |
+| `MAIL_TO_ADMIN` | Destinatario administrativo |
+| `CHATWOOT_ENABLED` | Activa/desactiva Chatwoot |
+| `CHATWOOT_BASE_URL` | URL Chatwoot |
+| `CHATWOOT_ACCOUNT_ID` | Cuenta Chatwoot |
+| `CHATWOOT_INBOX_ID` | Inbox Chatwoot |
+| `CHATWOOT_API_TOKEN` | Token Chatwoot |
 
-Crea un archivo `.env` en la raíz del proyecto:
+Todas las credenciales deben mantenerse en **Render → Environment** o en un `.env` local no versionado.
 
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `PORT` | Puerto del servidor (default: `3000`) | ⬜ |
-| `VERIFY_TOKEN` | Token de verificación del webhook Meta | ✅ |
-| `WHATSAPP_TOKEN` | Token de acceso de Meta Cloud API | ✅ |
-| `PHONE_NUMBER_ID` | ID del número de WhatsApp en Meta | ✅ |
-| `TWILIO_ACCOUNT_SID` | Account SID de Twilio | ⬜ |
-| `TWILIO_AUTH_TOKEN` | Auth Token de Twilio | ⬜ |
-| `TWILIO_WHATSAPP_FROM` | Número Twilio (ej: `whatsapp:+14155238886`) | ⬜ |
-| `GROQ_API_KEY` | API key de Groq para el fallback conversacional con IA | ⬜ |
-| `GROQ_MODEL` | Modelo de Groq a usar (default: `llama-3.3-70b-versatile`) | ⬜ |
-| `DASHBOARD_USER` | Usuario para autenticación básica del dashboard | ✅ (para usar el dashboard) |
-| `DASHBOARD_PASS` | Contraseña para autenticación básica del dashboard | ✅ (para usar el dashboard) |
-| `DATABASE_URL` | Cadena de conexión de PostgreSQL para persistir estadísticas | ⬜ |
-| `PUBLIC_URL` | URL pública del servicio, usada en el preview de redes sociales | ⬜ |
-| `GOOGLE_SCRIPT_EMAIL_URL` | URL del Google Apps Script que envía el correo de citas | ⬜ (requerida para confirmar citas por correo) |
-| `GOOGLE_SCRIPT_EMAIL_KEY` | Clave de autenticación del Apps Script | ⬜ (requerida para confirmar citas por correo) |
-| `MAIL_TO_ADMIN` | Correo administrativo que recibe copia de las citas (default: `ciavipbogota@gmail.com`) | ⬜ |
-| `CHATWOOT_ENABLED` | Activa la integración con Chatwoot (`true`/`false`) | ⬜ |
-| `CHATWOOT_BASE_URL` | URL base de la instancia de Chatwoot | ⬜ (requerida si `CHATWOOT_ENABLED=true`) |
-| `CHATWOOT_ACCOUNT_ID` | ID de la cuenta en Chatwoot | ⬜ (requerida si `CHATWOOT_ENABLED=true`) |
-| `CHATWOOT_INBOX_ID` | ID del inbox de Chatwoot conectado al bot | ⬜ (requerida si `CHATWOOT_ENABLED=true`) |
-| `CHATWOOT_API_TOKEN` | Token de acceso a la API de Chatwoot | ⬜ (requerida si `CHATWOOT_ENABLED=true`) |
-
-> Las variables de Twilio, Groq, PostgreSQL, Chatwoot y correo son opcionales: si no se configuran, el bot sigue operando (solo con Meta, sin fallback de IA, con dashboard en memoria, sin registro en Chatwoot y sin envío automático de correos de citas, respectivamente).
-
----
-
-## 🚀 Instalación y Uso
+## Instalación
 
 ```bash
-# 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/bot-whatsapp-crc-vip.git
-cd bot-whatsapp-crc-vip
-
-# 2. Instalar dependencias
+git clone https://github.com/CristianG1h/Bot-WhatsApp-CRC-VIP.git
+cd Bot-WhatsApp-CRC-VIP
 npm install
-
-# 3. Instalar navegadores de Playwright
 npx playwright install chromium
-
-# 4. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
-
-# 5. Iniciar el servidor
 npm start
 ```
 
-Para exponer el servidor localmente durante desarrollo:
+## Endpoints
 
-```bash
-ngrok http 3000
-# Usar la URL pública como webhook en Meta o Twilio
-```
-
----
-
-## 🌐 Endpoints Disponibles
-
-| Método | Endpoint | Descripción |
+| Método | Endpoint | Uso |
 |---|---|---|
-| `GET` | `/` | Dashboard (protegido) o preview enriquecido si lo solicita un bot de redes sociales |
-| `GET` | `/dashboard` | Dashboard de estadísticas (protegido con autenticación básica) |
-| `GET` | `/api/stats` | Snapshot de estadísticas en JSON, con filtros por fecha/búsqueda (protegido) |
-| `GET` | `/public/*` | Archivos estáticos del dashboard (protegidos) |
-| `GET` | `/health` | Healthcheck JSON `{ ok: true, service: "Bot WhatsApp CRC VIP" }` |
-| `GET` | `/webhook` | Verificación del webhook Meta (challenge) |
-| `POST` | `/webhook` | Entrada de mensajes Meta Cloud API ⭐ |
-| `POST` | `/webhook/twilio` | Entrada de mensajes Twilio ⭐ |
+| `GET` | `/` | Dashboard protegido o preview para bots. |
+| `GET` | `/dashboard` | Dashboard. |
+| `GET` | `/api/stats` | Estadísticas JSON. |
+| `GET` | `/public/*` | Recursos del dashboard. |
+| `GET` | `/health` | Health check. |
+| `GET` | `/webhook` | Verificación Meta. |
+| `POST` | `/webhook` | Entrada Meta. |
+| `POST` | `/webhook/twilio` | Entrada Twilio. |
 
----
+## Seguridad
 
-## 🛡️ Seguridad
+- Credenciales únicamente en variables de entorno.
+- Dashboard protegido con autenticación básica.
+- Datos sensibles enmascarados antes del fallback IA cuando corresponde.
+- Pasos críticos excluidos del control de la IA.
+- Rate limiting y deduplicación.
+- Caché y límites para evitar abuso de consultas externas.
+- Manejo controlado de errores para que una integración externa no bloquee todo el bot.
+- Normalización de identificadores telefónicos para mantener sesiones coherentes.
 
-- ✅ Tokens y credenciales almacenados en variables de entorno (nunca en código)
-- ✅ Dashboard protegido con autenticación básica (`DASHBOARD_USER` / `DASHBOARD_PASS`)
-- ✅ Rate limiting por número de teléfono (20 msg/min, 45 durante formularios)
-- ✅ Detección y descarte de mensajes duplicados
-- ✅ Datos sensibles enmascarados antes de enviarse a la IA (correos y números largos)
-- ✅ Pasos críticos del flujo (citas, documentos, transferencia a asesor) nunca se delegan a la IA
-- ✅ Caché con expiración automática para no sobrecargar la API del RUNT
-- ✅ Manejo de errores en todas las consultas externas — el bot nunca queda colgado
-- ✅ Límite diario de 150 consultas RUNT para evitar bloqueos
+## Cambios recientes consolidados
 
----
+### 30 de julio de 2026
 
-## 🔮 Mejoras Futuras
+- Normalización del identificador telefónico de las sesiones.
+- Estados de asesor y destino de respuesta reforzados.
+- Incorporación de `nombreRunt` dentro de la sesión.
+- Obtención de nombres y apellidos desde la consulta RUNT.
+- Nuevo paso `CONFIRMAR_NOMBRE_RUNT`.
+- Reutilización automática de la cédula ya consultada durante el agendamiento.
+- Si el nombre del RUNT es correcto, el flujo evita pedir nuevamente nombre y cédula y avanza al teléfono.
+- Si el nombre no es correcto, permite capturar el nombre corregido.
+- Ajustes en el resumen/confirmación de datos de la cita.
 
-- [ ] Persistencia de sesiones en Redis (para múltiples instancias)
-- [ ] Notificaciones salientes para recordatorio de citas
-- [ ] Soporte multi-sede (múltiples CRC)
-- [ ] Actualización automática de tarifas SIMIT por año
-- [ ] Exportación de estadísticas del dashboard (CSV/Excel)
+## Estado
 
----
-
-## 📌 Estado del Proyecto
-
-| Item | Estado |
+| Componente | Estado |
 |---|---|
-| Servidor en producción | 🟢 Activo |
-| Bot respondiendo mensajes | 🟢 Activo |
-| Consulta RUNT (OCR + API) | 🟢 Activo |
-| Consulta SIMIT (Playwright) | 🟢 Activo |
-| Fallback conversacional con IA (Groq) | 🟢 Activo |
-| Agendamiento de citas + correo de confirmación | 🟢 Activo |
-| Dashboard de estadísticas | 🟢 Activo |
-| Integración Chatwoot | 🟢 Activo (opcional) |
-| Transferencia a asesor | 🟢 Activo |
-| Anti-spam | 🟢 Activo |
-| Base de datos (bot) | ⚪ No utilizada — solo estadísticas del dashboard |
+| Bot CRC | Activo |
+| Bot CIA/SIMIT | Activo |
+| Consulta RUNT | Activa |
+| Confirmación de nombre RUNT | Activa |
+| Consulta SIMIT | Activa |
+| Agendamiento | Activo |
+| Correo de citas | Activo cuando está configurado |
+| Groq IA | Opcional/activo con configuración |
+| Chatwoot | Opcional/activo con configuración |
+| Dashboard | Activo |
+| PostgreSQL | Opcional para persistencia |
+| Anti-spam y deduplicación | Activos |
 
 ---
 
 <div align="center">
 
-## 👨‍💻 Autor
-
-**Cristian Guarín**
-Ingeniero en Sistemas
-Bogotá, Colombia
-
----
-
-*Desarrollado con ❤️ para VIP CRC Galerías & CIA VIP*
+**Cristian Guarín**  
+VIP CRC Galerías & CIA VIP — Bogotá, Colombia
 
 </div>
