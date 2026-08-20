@@ -1,5 +1,26 @@
 const sessions = new Map();
 
+const PASOS_CRC_CON_CONSULTA_EXTERNA = new Set([
+  "COMPARENDO",
+  "COMPARENDO_SIMIT_DOCUMENTO",
+  "CONSULTANDO_SIMIT_CRC",
+  "SIMIT_DECISION_CRC",
+  "CEDULA",
+  "CONSULTANDO_RUNT",
+  "RUNT_ACTIVA",
+  "RUNT_SIN_LICENCIAS",
+  "RUNT_REVISION_MANUAL",
+  "CONFIRMAR_NOMBRE_RUNT",
+]);
+
+const PASOS_SIMIT_INDEPENDIENTE = new Set([
+  "CIA_MENU",
+  "CIA_AUTORIZACION",
+  "CIA_DOCUMENTO",
+  "CONSULTANDO_SIMIT",
+  "CIA_FINAL",
+]);
+
 function normalizarClaveTelefono(phone) {
   const original = String(phone || "").trim();
   const digitos = original
@@ -31,6 +52,7 @@ function crearSessionInicial(replyTo) {
     botPausadoPorAsesor: false,
     asesorLastAt: null,
     avisoReactivacionBotEnviado: false,
+    consultaExternaDeshabilitada: null,
     replyTo: String(replyTo || "").trim() || null,
   };
 }
@@ -55,13 +77,65 @@ function setReplyTarget(phone, replyTo = phone) {
   });
 }
 
+function convertirAFlujoSinConsultas(current, data = {}) {
+  const stepSolicitado = data.step;
+
+  if (!stepSolicitado) {
+    return data;
+  }
+
+  const esSimitIndependiente =
+    PASOS_SIMIT_INDEPENDIENTE.has(stepSolicitado) &&
+    (data.linea === "CIA" || current.linea === "CIA" || stepSolicitado === "CIA_MENU");
+
+  if (esSimitIndependiente) {
+    return {
+      ...data,
+      step: "MENU_PRINCIPAL",
+      linea: "CRC",
+      comparendos: null,
+      cedula: null,
+      documentoSimit: null,
+      simitTienePendientes: false,
+      consultaExternaDeshabilitada: "SIMIT",
+    };
+  }
+
+  if (PASOS_CRC_CON_CONSULTA_EXTERNA.has(stepSolicitado)) {
+    return {
+      ...data,
+      step: "DIA_CITA",
+      linea: "CRC",
+      comparendos: "No consultado",
+      cedula: null,
+      documentoSimit: null,
+      simitTienePendientes: false,
+      nombreRunt: null,
+      nombreCita: null,
+      cedulaCita: null,
+      telefonoCita: null,
+      correoCita: null,
+      diaCita: null,
+      fechaCitaISO: null,
+      horarioCita: null,
+      consultaExternaDeshabilitada: "CRC",
+    };
+  }
+
+  return {
+    ...data,
+    consultaExternaDeshabilitada: null,
+  };
+}
+
 function updateSession(phone, data = {}) {
   const key = normalizarClaveTelefono(phone);
   const current = getSession(phone);
+  const dataNormalizada = convertirAFlujoSinConsultas(current, data);
 
   const nuevaSession = {
     ...current,
-    ...data,
+    ...dataNormalizada,
   };
 
   if (!nuevaSession.replyTo) {
@@ -70,6 +144,44 @@ function updateSession(phone, data = {}) {
 
   sessions.set(key, nuevaSession);
   console.log("✅ Sesión actualizada:", key, nuevaSession);
+}
+
+function prepararMensajeSinConsultasExternas(phone, body) {
+  const texto = String(body || "");
+  const session = getSession(phone);
+
+  if (session.consultaExternaDeshabilitada === "CRC") {
+    return `Perfecto ✅
+
+Vamos a continuar directamente con tu agendamiento, sin realizar consultas automáticas en RUNT ni SIMIT.
+
+Para dejar tu atención preconfirmada, elige el día en el que deseas asistir:
+
+1️⃣ Hoy
+2️⃣ Mañana
+3️⃣ Otro día
+
+🕒 Horario de atención:
+Lunes a viernes: 7:00 a.m. a 3:30 p.m.
+Sábados: 7:00 a.m. a 11:30 a.m.
+Domingos y festivos: no laboramos.
+
+Responde con el número de la opción.`;
+  }
+
+  if (session.consultaExternaDeshabilitada === "SIMIT") {
+    return `La consulta automática de SIMIT se encuentra desactivada para evitar que el bot se bloquee.
+
+Si necesitas revisar comparendos o multas, puedes escribir *asesor* y te ayudaremos de forma manual.
+
+Si deseas continuar con el proceso de licencia o agendar tu examen CRC, responde:
+
+1️⃣ Iniciar proceso / agendar
+2️⃣ Ver información
+3️⃣ Hablar con asesor`;
+  }
+
+  return texto;
 }
 
 function resetSession(phone) {
@@ -92,4 +204,5 @@ module.exports = {
   getAllSessions,
   setReplyTarget,
   normalizarClaveTelefono,
+  prepararMensajeSinConsultasExternas,
 };

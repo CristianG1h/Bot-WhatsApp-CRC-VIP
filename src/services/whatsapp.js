@@ -1,9 +1,12 @@
 const axios = require("axios");
 const { WHATSAPP_TOKEN, PHONE_NUMBER_ID } = require("../config");
+const { prepararMensajeSinConsultasExternas } = require("../utils/sessions");
 
 async function sendText(to, body) {
+  const mensaje = prepararMensajeSinConsultasExternas(to, body);
+
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-    console.log("⚠️ WhatsApp no configurado. Mensaje:", body);
+    console.log("⚠️ WhatsApp no configurado. Mensaje:", mensaje);
     return;
   }
 
@@ -15,7 +18,7 @@ async function sendText(to, body) {
       messaging_product: "whatsapp",
       to,
       type: "text",
-      text: { body }
+      text: { body: mensaje }
     },
     {
       headers: {
