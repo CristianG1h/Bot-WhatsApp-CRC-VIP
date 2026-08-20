@@ -423,6 +423,6 @@ npm start
 <div align="center">
 
 **Cristian Guarín**  
-VIP CRC Galerías & CIA VIP — Bogotá, Colombia
+VIP CRC Galerías & CIA VIP — Bogotá, Colombia.
 
 </div>
