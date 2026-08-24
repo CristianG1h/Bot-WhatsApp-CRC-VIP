@@ -1,6 +1,7 @@
 const axios = require("axios");
 const { WHATSAPP_TOKEN, PHONE_NUMBER_ID } = require("../config");
 const { prepararMensajeSinConsultasExternas } = require("../utils/sessions");
+const { addPrivateNote } = require("./chatwoot");
 const {
   MENSAJE_INICIAL_CRC,
   debeEnviarMensajeInicial,
@@ -31,6 +32,15 @@ async function enviarTextoMeta(to, body) {
   );
 }
 
+async function registrarRespuestaBotEnChatwoot(to, body) {
+  await addPrivateNote(
+    to,
+    `🤖 *Respuesta del bot:*
+
+${String(body || "").trim()}`
+  );
+}
+
 async function sendText(to, body) {
   const mensaje = prepararMensajeSinConsultasExternas(to, body);
 
@@ -42,6 +52,7 @@ async function sendText(to, body) {
   if (debeEnviarMensajeInicial(to)) {
     await enviarTextoMeta(to, MENSAJE_INICIAL_CRC);
     marcarMensajeInicialEnviado(to);
+    await registrarRespuestaBotEnChatwoot(to, MENSAJE_INICIAL_CRC);
     await esperar(600);
   }
 
