@@ -130,6 +130,10 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/", healthRoutes);
+
+// El flujo comercial simplificado toma solo los pasos iniciales y la
+// confirmación final. El calendario seguro y el webhook histórico siguen
+// manejando fecha/hora, datos, Chatwoot y el resto de funciones existentes.
 app.use("/webhook", simpleFlowMiddleware);
 app.use("/webhook", agendaMiddleware);
 app.use("/webhook", whatsappRoutes);
