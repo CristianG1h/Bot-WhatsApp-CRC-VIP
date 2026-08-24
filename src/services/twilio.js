@@ -1,5 +1,6 @@
 const twilio = require("twilio");
 const { prepararMensajeSinConsultasExternas } = require("../utils/sessions");
+const { addPrivateNote } = require("./chatwoot");
 const {
   MENSAJE_INICIAL_CRC,
   debeEnviarMensajeInicial,
@@ -25,6 +26,15 @@ async function enviarTextoTwilio(to, body) {
   });
 }
 
+async function registrarRespuestaBotEnChatwoot(to, body) {
+  await addPrivateNote(
+    to,
+    `🤖 *Respuesta del bot:*
+
+${String(body || "").trim()}`
+  );
+}
+
 async function sendTwilioText(to, body) {
   const mensaje = prepararMensajeSinConsultasExternas(to, body);
 
@@ -36,6 +46,7 @@ async function sendTwilioText(to, body) {
   if (debeEnviarMensajeInicial(to)) {
     await enviarTextoTwilio(to, MENSAJE_INICIAL_CRC);
     marcarMensajeInicialEnviado(to);
+    await registrarRespuestaBotEnChatwoot(to, MENSAJE_INICIAL_CRC);
     await esperar(600);
   }
 
