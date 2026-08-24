@@ -1,6 +1,6 @@
 # Bot WhatsApp CRC VIP
 
-Bot de atención y agendamiento para **VIP CRC Galerías**, integrado con WhatsApp, Chatwoot, correo de confirmación y dashboard de estadísticas.
+Bot de atención y agendamiento para **VIP CRC Galerías**, integrado con WhatsApp, Chatwoot, correo de confirmación, IA de respaldo y dashboard de estadísticas.
 
 ## Flujo actual
 
@@ -16,6 +16,21 @@ El primer mensaje que envíe un usuario siempre inicia la misma interacción com
 8. Muestra un resumen para confirmar.
 9. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
 
+## IA como fallback
+
+La IA **no reemplaza el flujo principal** y no interviene en el primer mensaje. Solo se utiliza cuando el usuario ya está dentro del flujo y hace una pregunta que no corresponde a una opción o dato esperado.
+
+Ejemplos:
+
+- `¿Puedo pagar con tarjeta?`
+- `¿Cuánto se demora el examen?`
+- `¿Qué categoría necesito?`
+- `¿Tienen parqueadero?`
+
+Después de responder, la IA recuerda al usuario el paso en el que estaba para que pueda continuar con el agendamiento. Si `GROQ_API_KEY` no está configurada o el servicio de IA falla, el flujo normal continúa sin bloquearse.
+
+La IA tiene contexto autorizado del CRC y reglas para no inventar precios, resultados de RUNT/SIMIT, comparendos, diagnósticos, normas externas o datos que deban confirmar los asesores.
+
 ## Estructura
 
 ```text
@@ -23,6 +38,7 @@ src/
 ├── server.js
 ├── config.js
 ├── routes/
+│   ├── aiFallback.js
 │   ├── health.js
 │   └── whatsapp.js
 ├── services/
@@ -40,7 +56,7 @@ src/
     └── dashboard.html
 ```
 
-El flujo comercial, el calendario y la captura de datos están consolidados en `src/routes/whatsapp.js`. Se eliminaron las capas y servicios heredados de RUNT, SIMIT e IA que ya no forman parte del proceso actual.
+El flujo comercial, el calendario y la captura de datos están consolidados en `src/routes/whatsapp.js`. `src/routes/aiFallback.js` es una capa pequeña y aislada únicamente para preguntas no cubiertas por el flujo. Se eliminaron los servicios heredados de consultas automáticas RUNT/SIMIT y las capas duplicadas del webhook.
 
 ## Endpoints principales
 
@@ -59,6 +75,9 @@ PORT
 VERIFY_TOKEN
 WHATSAPP_TOKEN
 PHONE_NUMBER_ID
+
+GROQ_API_KEY
+GROQ_MODEL
 
 CHATWOOT_BASE_URL
 CHATWOOT_ACCOUNT_ID
@@ -93,3 +112,4 @@ npm start
 - Los festivos colombianos se calculan en código, incluidos los trasladables por Ley Emiliani y los relacionados con Pascua.
 - Las notas privadas de Chatwoot registran los mensajes entrantes y las respuestas del bot para conservar trazabilidad.
 - Cuando un asesor responde desde Chatwoot, el bot pausa la automatización temporalmente para evitar respuestas simultáneas.
+- La IA recibe el mensaje sanitizado para omitir correos y secuencias numéricas largas antes de enviarlo al proveedor.
