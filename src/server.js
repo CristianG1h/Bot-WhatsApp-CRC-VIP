@@ -5,6 +5,7 @@ const path = require("path");
 
 const { PORT } = require("./config");
 const healthRoutes = require("./routes/health");
+const simpleFlowMiddleware = require("./routes/simpleFlowMiddleware");
 const agendaMiddleware = require("./routes/agendaMiddleware");
 const whatsappRoutes = require("./routes/whatsapp");
 const Stats = require("./services/stats");
@@ -129,6 +130,7 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/", healthRoutes);
+app.use("/webhook", simpleFlowMiddleware);
 app.use("/webhook", agendaMiddleware);
 app.use("/webhook", whatsappRoutes);
 
