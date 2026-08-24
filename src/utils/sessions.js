@@ -1,4 +1,5 @@
 const sessions = new Map();
+const { menuDiasDisponibles } = require("./agenda");
 
 const PASOS_CRC_CON_CONSULTA_EXTERNA = new Set([
   "COMPARENDO",
@@ -150,23 +151,11 @@ function prepararMensajeSinConsultasExternas(phone, body) {
   const texto = String(body || "");
   const session = getSession(phone);
 
-  if (session.consultaExternaDeshabilitada === "CRC") {
-    return `Perfecto ✅
-
-Vamos a continuar directamente con tu agendamiento, sin realizar consultas automáticas en RUNT ni SIMIT.
-
-Para dejar tu atención preconfirmada, elige el día en el que deseas asistir:
-
-1️⃣ Hoy
-2️⃣ Mañana
-3️⃣ Otro día
-
-🕒 Horario de atención:
-Lunes a viernes: 7:00 a.m. a 3:30 p.m.
-Sábados: 7:00 a.m. a 11:30 a.m.
-Domingos y festivos: no laboramos.
-
-Responde con el número de la opción.`;
+  if (
+    session.consultaExternaDeshabilitada === "CRC" &&
+    session.step === "DIA_CITA"
+  ) {
+    return menuDiasDisponibles();
   }
 
   if (session.consultaExternaDeshabilitada === "SIMIT") {
