@@ -151,9 +151,16 @@ function prepararMensajeSinConsultasExternas(phone, body) {
   const texto = String(body || "");
   const session = getSession(phone);
 
+  const pareceMenuAntiguoDeFecha =
+    texto.includes("1️⃣ Hoy") ||
+    texto.includes("2️⃣ Mañana") ||
+    texto.includes("2️⃣ Manana") ||
+    (texto.toLowerCase().includes("elige el día") &&
+      texto.toLowerCase().includes("otro día"));
+
   if (
-    session.consultaExternaDeshabilitada === "CRC" &&
-    session.step === "DIA_CITA"
+    session.step === "DIA_CITA" &&
+    (session.consultaExternaDeshabilitada === "CRC" || pareceMenuAntiguoDeFecha)
   ) {
     return menuDiasDisponibles();
   }
