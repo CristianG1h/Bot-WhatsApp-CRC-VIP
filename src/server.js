@@ -5,8 +5,6 @@ const path = require("path");
 
 const { PORT } = require("./config");
 const healthRoutes = require("./routes/health");
-const simpleFlowMiddleware = require("./routes/simpleFlowMiddleware");
-const agendaMiddleware = require("./routes/agendaMiddleware");
 const whatsappRoutes = require("./routes/whatsapp");
 const Stats = require("./services/stats");
 
@@ -20,7 +18,7 @@ const publicPath = path.join(__dirname, "public");
 
 const PREVIEW_TITLE = "Bot CRC VIP";
 const PREVIEW_DESCRIPTION =
-  "Dashboard y estadísticas del bot CRC VIP. Consulta actividad, RUNT, SIMIT, citas y seguimiento en tiempo real.";
+  "Dashboard y estadísticas del bot CRC VIP. Consulta actividad, citas y seguimiento en tiempo real.";
 const PREVIEW_URL = process.env.PUBLIC_URL || "https://bot-whatsapp-crc-vip.onrender.com/";
 const PREVIEW_IMAGE = "https://vip-mediconecta.app/tenant-logo.png";
 
@@ -130,12 +128,6 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/", healthRoutes);
-
-// El flujo comercial simplificado toma solo los pasos iniciales y la
-// confirmación final. El calendario seguro y el webhook histórico siguen
-// manejando fecha/hora, datos, Chatwoot y el resto de funciones existentes.
-app.use("/webhook", simpleFlowMiddleware);
-app.use("/webhook", agendaMiddleware);
 app.use("/webhook", whatsappRoutes);
 
 app.listen(PORT, () => {
