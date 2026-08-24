@@ -1,10 +1,33 @@
 // src/services/chatwoot.js
 
+const { prepararMensajeSinConsultasExternas } = require("../utils/sessions");
+
 const contactCache = new Map();
 const conversationCache = new Map();
+let chatwootDisabledWarningShown = false;
+
+function hasChatwootConfig() {
+  return Boolean(
+    String(process.env.CHATWOOT_BASE_URL || "").trim() &&
+      String(process.env.CHATWOOT_ACCOUNT_ID || "").trim() &&
+      String(process.env.CHATWOOT_INBOX_ID || "").trim() &&
+      String(process.env.CHATWOOT_API_TOKEN || "").trim()
+  );
+}
 
 function chatwootEnabled() {
-  return String(process.env.CHATWOOT_ENABLED || "").toLowerCase() === "true";
+  const value = String(process.env.CHATWOOT_ENABLED || "")
+    .trim()
+    .toLowerCase();
+
+  if (["false", "0", "no", "off"].includes(value)) return false;
+  if (["true", "1", "yes", "on"].includes(value)) return true;
+
+  // Si la variable CHATWOOT_ENABLED no existe, activamos el registro
+  // automáticamente cuando las credenciales completas sí están configuradas.
+  // Esto evita perder las notas privadas después de un redeploy por una
+  // variable booleana ausente.
+  return hasChatwootConfig();
 }
 
 function getConfig() {
@@ -339,32 +362,72 @@ async function getOrCreateConversation(rawPhone) {
   return conversationId;
 }
 
+function clearChatwootCache(rawPhone) {
+  if (!hasChatwootConfig()) return;
+
+  const key = cacheKey(rawPhone);
+  contactCache.delete(key);
+  conversationCache.delete(key);
+}
+
+async function createPrivateNote(rawPhone, text) {
+  const { accountId } = getConfig();
+  const conversationId = await getOrCreateConversation(rawPhone);
+
+  return chatwootRequest(
+    `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      body: {
+        content: text,
+        message_type: "outgoing",
+        content_type: "text",
+        private: true,
+        content_attributes: {},
+      },
+    }
+  );
+}
+
 async function addPrivateNote(rawPhone, content) {
-  if (!chatwootEnabled()) return null;
+  if (!chatwootEnabled()) {
+    if (!chatwootDisabledWarningShown) {
+      chatwootDisabledWarningShown = true;
+      console.warn(
+        "⚠️ Notas privadas Chatwoot desactivadas o sin configuración completa"
+      );
+    }
+    return null;
+  }
 
   const text = String(content || "").trim();
   if (!text) return null;
 
   try {
-    const { accountId } = getConfig();
-    const conversationId = await getOrCreateConversation(rawPhone);
-
-    return await chatwootRequest(
-      `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
-      {
-        method: "POST",
-        body: {
-          content: text,
-          message_type: "outgoing",
-          content_type: "text",
-          private: true,
-          content_attributes: {},
-        },
-      }
-    );
+    const result = await createPrivateNote(rawPhone, text);
+    console.log("📝 Nota privada registrada en Chatwoot:", cleanPhone(rawPhone));
+    return result;
   } catch (error) {
     console.error("⚠️ Error creando nota privada en Chatwoot:", error.message);
-    return null;
+
+    // Si la conversación guardada en caché ya fue cerrada/recreada, limpiamos
+    // caché y hacemos un segundo intento sobre la conversación vigente.
+    clearChatwootCache(rawPhone);
+
+    try {
+      const result = await createPrivateNote(rawPhone, text);
+      console.log(
+        "📝 Nota privada registrada en Chatwoot después de reintento:",
+        cleanPhone(rawPhone)
+      );
+      return result;
+    } catch (retryError) {
+      console.error(
+        "❌ No fue posible registrar la nota privada en Chatwoot:",
+        retryError.message
+      );
+      return null;
+    }
   }
 }
 
@@ -381,8 +444,14 @@ ${text}`
 }
 
 async function logOutgoingMessage(rawPhone, content) {
-  const text = String(content || "").trim();
-  if (!text) return null;
+  const original = String(content || "").trim();
+  if (!original) return null;
+
+  // Registrar exactamente el texto que terminó enviándose por WhatsApp.
+  // El flujo puede sustituir ciertos mensajes cuando RUNT/SIMIT están
+  // deshabilitados, así que aplicamos la misma preparación usada por el
+  // transporte antes de crear la nota privada.
+  const text = prepararMensajeSinConsultasExternas(rawPhone, original);
 
   return addPrivateNote(
     rawPhone,
@@ -402,12 +471,6 @@ async function markNeedsAgent(
 
 Motivo: ${reason}`
   );
-}
-
-function clearChatwootCache(rawPhone) {
-  const key = cacheKey(rawPhone);
-  contactCache.delete(key);
-  conversationCache.delete(key);
 }
 
 module.exports = {
