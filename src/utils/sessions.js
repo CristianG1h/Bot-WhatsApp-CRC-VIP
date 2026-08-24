@@ -79,6 +79,11 @@ function getAllSessions() {
   ]);
 }
 
+// Compatibilidad con el servicio de notas: el flujo actual ya no sustituye mensajes.
+function prepararMensajeSinConsultasExternas(_phone, body) {
+  return String(body || "");
+}
+
 module.exports = {
   getSession,
   updateSession,
@@ -86,4 +91,5 @@ module.exports = {
   setReplyTarget,
   getAllSessions,
   normalizarClaveTelefono,
+  prepararMensajeSinConsultasExternas,
 };
