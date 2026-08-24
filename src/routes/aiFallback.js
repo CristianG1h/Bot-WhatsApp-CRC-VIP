@@ -3,6 +3,7 @@
 const express = require("express");
 const router = express.Router();
 
+const Stats = require("../services/stats");
 const { sendText } = require("../services/whatsapp");
 const { sendTwilioText } = require("../services/twilio");
 const { logIncomingMessage, logOutgoingMessage } = require("../services/chatwoot");
@@ -111,10 +112,28 @@ function normalizarTelefono(valor) {
 
 function esDuplicado({ from, text, source, messageId }) {
   const now = Date.now();
-  const key = `${normalizarTelefono(from)}::${String(text).trim().toLowerCase().replace(/\s+/g, " ")}`;
-  const anterior = procesados.get(key);
-  if (anterior && now - anterior.time < 5000 && (anterior.source !== source || !messageId)) return true;
-  procesados.set(key, { time: now, source, messageId });
+
+  if (messageId) {
+    const idKey = `id:${messageId}`;
+    const anteriorId = procesados.get(idKey);
+    if (anteriorId && now - anteriorId.time < 60000) return true;
+    procesados.set(idKey, { time: now, source, messageId });
+  }
+
+  const contentKey = `content:${normalizarTelefono(from)}::${String(text)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")}`;
+  const anterior = procesados.get(contentKey);
+
+  if (anterior && now - anterior.time < 5000) {
+    const diferenteFuente = anterior.source !== source;
+    const faltaId = !messageId || !anterior.messageId;
+    if (diferenteFuente || faltaId) return true;
+  }
+
+  procesados.set(contentKey, { time: now, source, messageId });
+
   for (const [k, value] of procesados.entries()) {
     if (now - value.time > 120000) procesados.delete(k);
   }
@@ -122,9 +141,12 @@ function esDuplicado({ from, text, source, messageId }) {
 }
 
 function pareceConsulta(text) {
-  const t = String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const t = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   if (t.includes("?")) return true;
-  return /\b(que|como|cuanto|cuanto cuesta|cual|donde|puedo|sirve|vale|precio|costo|horario|pago|pagar|tarjeta|efectivo|nequi|categoria|licencia|examen|requisito|documento|parqueadero|direccion|ubicacion|demora|duracion|medico|vision|audicion|psicologia|renovacion|refrendacion|runt|simit|comparendo|multa)\b/.test(t);
+  return /\b(que|como|cuanto|cual|donde|puedo|sirve|vale|precio|costo|horario|pago|pagar|tarjeta|efectivo|nequi|categoria|licencia|examen|requisito|documento|parqueadero|direccion|ubicacion|demora|duracion|medico|vision|audicion|psicologia|renovacion|refrendacion|runt|simit|comparendo|multa)\b/.test(t);
 }
 
 function esEntradaPropiaDelPaso(step, text) {
@@ -227,6 +249,7 @@ async function consultarIA(text, session) {
 async function responderIA(to, text) {
   if (String(to).startsWith("whatsapp:")) await sendTwilioText(to, text);
   else await sendText(to, text);
+  Stats.mensajeEnviado(to, String(text).slice(0, 120));
   await logOutgoingMessage(to, text);
 }
 
@@ -240,15 +263,16 @@ router.use(async (req, res, next) => {
     if (["MENU_INICIAL", "HUMANO", "ENVIANDO_CORREO_CITA"].includes(session.step)) return next();
     if (esEntradaPropiaDelPaso(session.step, incoming.text) || !pareceConsulta(incoming.text)) return next();
 
-    const respuesta = await consultarIA(incoming.text, session);
-    if (!respuesta) return next();
-
     if (esDuplicado(incoming)) {
       if (!res.headersSent) res.status(200).send("OK");
       return;
     }
 
+    const respuesta = await consultarIA(incoming.text, session);
+    if (!respuesta) return next();
+
     if (!res.headersSent) res.status(200).send("OK");
+    Stats.mensajeRecibido(incoming.from);
     if (!incoming.skipIncomingNote) {
       await logIncomingMessage(incoming.from, incoming.text).catch(() => null);
     }
