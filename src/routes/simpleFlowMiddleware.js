@@ -6,7 +6,12 @@ const router = express.Router();
 const Stats = require("../services/stats");
 const { sendText } = require("../services/whatsapp");
 const { sendTwilioText } = require("../services/twilio");
-const { logIncomingMessage, logOutgoingMessage } = require("../services/chatwoot");
+const {
+  logIncomingMessage,
+  logOutgoingMessage,
+  markNeedsAgent,
+} = require("../services/chatwoot");
+const { enviarCorreoCita } = require("../services/email");
 const { limpiarTexto } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const { esRespuestaSi, esRespuestaNo } = require("../utils/messages");
@@ -315,6 +320,16 @@ function esCorreccionCita(msg) {
   );
 }
 
+function esConfirmacionCita(msg) {
+  const texto = String(msg || "").toLowerCase().trim();
+  return (
+    texto === "1" ||
+    esRespuestaSi(texto) ||
+    texto.includes("confirmar") ||
+    texto.includes("correcto")
+  );
+}
+
 function limpiarDatosCita() {
   return {
     diaCita: null,
@@ -327,6 +342,59 @@ function limpiarDatosCita() {
     telefonoCita: null,
     correoCita: null,
   };
+}
+
+function resumenCitaSimple(datos) {
+  return `✅ *Cita preconfirmada - VIP CRC Galerías*
+
+👤 Nombre: *${datos.nombre}*
+🪪 Cédula: *${datos.cedula}*
+📞 Teléfono: *${datos.telefono}*
+📧 Correo: ${datos.correo}
+🚗 Trámite: *${datos.tramite}*
+📅 Día: *${datos.dia}*
+⏰ Horario aproximado: *${datos.horario}*
+
+📍 *VIP CRC Galerías*
+Cra. 28A #51-70, barrio Galerías – Bogotá.
+
+📄 Si necesitas validar la habilitación del centro, un asesor puede compartirte los documentos correspondientes.
+
+Recuerda traer tu documento físico original.
+
+También enviamos la confirmación al correo registrado.`;
+}
+
+async function transferirAAsesorSimple(from) {
+  Stats.asesorActivado(from, "Usuario solicitó asesor desde flujo simplificado CRC");
+
+  await markNeedsAgent(
+    from,
+    "Usuario solicitó asesor desde flujo simplificado CRC"
+  ).catch((error) => {
+    console.error("⚠️ No se pudo marcar conversación para asesor:", error.message);
+  });
+
+  updateSession(from, {
+    step: "HUMANO",
+    linea: "CRC",
+    necesitaAsesor: true,
+    asesorDisponible: true,
+    asesorActivo: true,
+    botPausadoPorAsesor: true,
+    asesorLastAt: Date.now(),
+    avisoReactivacionBotEnviado: false,
+    consultaExternaDeshabilitada: null,
+  });
+
+  await responderSimple(
+    from,
+    `Perfecto ✅
+
+Un asesor continuará con tu atención por este mismo chat.
+
+Déjanos tu consulta y te responderemos en cuanto sea posible.`
+  );
 }
 
 function debeManejar(session, text) {
@@ -350,7 +418,7 @@ function debeManejar(session, text) {
   }
 
   if (session.step === "MENU_INFORMACION" && msg === "7") return true;
-  if (session.step === "CONFIRMAR_CITA" && esCorreccionCita(msg)) return true;
+  if (session.step === "CONFIRMAR_CITA") return true;
 
   return false;
 }
@@ -513,12 +581,8 @@ router.use(async (req, res, next) => {
       }
 
       if (msg === "3" || esSolicitudAsesor(msg)) {
-        updateSession(from, {
-          step: "MENU_PRINCIPAL",
-          linea: "CRC",
-          consultaExternaDeshabilitada: null,
-        });
-        return next();
+        await transferirAAsesorSimple(from);
+        return;
       }
 
       await responderSimple(from, menuNoRenovacion());
@@ -567,18 +631,78 @@ router.use(async (req, res, next) => {
       return;
     }
 
-    if (session.step === "CONFIRMAR_CITA" && esCorreccionCita(msg)) {
+    if (session.step === "CONFIRMAR_CITA") {
+      if (esCorreccionCita(msg)) {
+        updateSession(from, {
+          step: "DIA_CITA",
+          linea: "CRC",
+          consultaExternaDeshabilitada: null,
+          ...limpiarDatosCita(),
+        });
+
+        await responderSimple(
+          from,
+          `Sin problema ✅\n\nVamos a tomar los datos nuevamente.\n\n${menuDiasDisponibles()}`
+        );
+        return;
+      }
+
+      if (!esConfirmacionCita(msg)) {
+        await responderSimple(
+          from,
+          `Por favor responde:\n\n1️⃣ Confirmar cita\n2️⃣ Corregir datos`
+        );
+        return;
+      }
+
+      const datos = {
+        nombre: session.nombreCita,
+        cedula: session.cedulaCita || session.cedula,
+        telefono: session.telefonoCita,
+        correo: session.correoCita,
+        dia: session.diaCita || "Día por confirmar",
+        horario: session.horarioCita || "Horario por confirmar",
+        tramite: session.tramite || "Licencia de conducción",
+      };
+
       updateSession(from, {
-        step: "DIA_CITA",
-        linea: "CRC",
+        step: "ENVIANDO_CORREO_CITA",
         consultaExternaDeshabilitada: null,
-        ...limpiarDatosCita(),
       });
 
       await responderSimple(
         from,
-        `Sin problema ✅\n\nVamos a tomar los datos nuevamente.\n\n${menuDiasDisponibles()}`
+        "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
       );
+
+      try {
+        await enviarCorreoCita(datos);
+        Stats.citaPreconfirmada(from, datos.nombre || "usuario");
+        await responderSimple(from, resumenCitaSimple(datos));
+      } catch (error) {
+        console.error("❌ Error enviando correo en flujo simple:", error.message);
+
+        await responderSimple(
+          from,
+          `✅ *Solicitud de cita recibida*
+
+Tus datos quedaron registrados en esta conversación, pero en este momento no fue posible enviar el correo automático.
+
+👤 Nombre: *${datos.nombre}*
+🪪 Cédula: *${datos.cedula}*
+📞 Teléfono: *${datos.telefono}*
+📧 Correo: ${datos.correo}
+🚗 Trámite: *${datos.tramite}*
+📅 Día: *${datos.dia}*
+⏰ Horario: *${datos.horario}*
+
+📍 VIP CRC Galerías - Cra. 28A #51-70, Bogotá.
+
+Un asesor continuará con la confirmación final.`
+        );
+      }
+
+      resetSession(from);
       return;
     }
 
