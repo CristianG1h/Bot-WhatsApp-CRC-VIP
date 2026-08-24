@@ -5,6 +5,7 @@ const path = require("path");
 
 const { PORT } = require("./config");
 const healthRoutes = require("./routes/health");
+const aiFallback = require("./routes/aiFallback");
 const whatsappRoutes = require("./routes/whatsapp");
 const Stats = require("./services/stats");
 
@@ -128,6 +129,11 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/", healthRoutes);
+
+// La IA solo interviene como fallback cuando el usuario hace una pregunta
+// que no corresponde a una opción o dato esperado del flujo. El primer
+// mensaje siempre sigue entrando al flujo comercial definido por el CRC.
+app.use("/webhook", aiFallback);
 app.use("/webhook", whatsappRoutes);
 
 app.listen(PORT, () => {
