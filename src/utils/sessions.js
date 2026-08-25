@@ -1,5 +1,9 @@
 "use strict";
 
+const {
+  limpiarMensajeHabilitacionAntiguo,
+} = require("../services/crcMedia");
+
 const sessions = new Map();
 
 function normalizarClaveTelefono(phone) {
@@ -79,9 +83,23 @@ function getAllSessions() {
   ]);
 }
 
-// Compatibilidad con el servicio de notas: el flujo actual ya no sustituye mensajes.
 function prepararMensajeSinConsultasExternas(_phone, body) {
-  return String(body || "");
+  const original = String(body || "");
+  let text = limpiarMensajeHabilitacionAntiguo(original);
+
+  if (
+    original.includes("Renovación o refrendación: $180.000") &&
+    original.includes("¿Deseas agendar tu cita?")
+  ) {
+    text += "\n\n📷 *Adjunto enviado:* foto guía de la fachada de VIP CRC Galerías.";
+  }
+
+  if (original.includes("Cita preconfirmada - VIP CRC Galerías")) {
+    text +=
+      "\n\n📄 *Adjunto enviado:* certificado oficial de acreditación ONAC 22-CEP-076.";
+  }
+
+  return text.trim();
 }
 
 module.exports = {
