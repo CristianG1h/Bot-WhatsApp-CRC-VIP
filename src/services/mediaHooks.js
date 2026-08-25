@@ -1,7 +1,9 @@
 "use strict";
 
+const path = require("path");
 const whatsappService = require("./whatsapp");
 const twilioService = require("./twilio");
+const { sendAttachment } = require("./chatwootMedia");
 const {
   ONAC_CERT_URL,
   getFachadaUrl,
@@ -10,6 +12,7 @@ const {
   limpiarMensajeHabilitacionAntiguo,
 } = require("./crcMedia");
 
+const FACHADA_LOCAL = path.join(__dirname, "..", "assets", "fachada-crc-vip.jpg");
 let instalado = false;
 
 function esMensajePromocion(texto) {
@@ -24,16 +27,33 @@ function esConfirmacionFinal(texto) {
   return String(texto || "").includes("Cita preconfirmada - VIP CRC Galerías");
 }
 
+async function enviarFotoPorChatwoot(to) {
+  try {
+    await sendAttachment(to, FACHADA_LOCAL, {
+      filename: "fachada-vip-crc-galerias.jpg",
+      mimeType: "image/jpeg",
+      caption: captionFotoSede(),
+    });
+    return true;
+  } catch (error) {
+    console.error("⚠️ Chatwoot no pudo enviar la foto de la sede:", error.message);
+    return false;
+  }
+}
+
 async function enviarExtrasMeta(to, textoOriginal) {
   if (esMensajePromocion(textoOriginal)) {
-    try {
-      await whatsappService.sendImage(to, getFachadaUrl(), captionFotoSede());
-    } catch (error) {
-      console.error("⚠️ No se pudo enviar foto guía de la sede:", error.message);
-      await whatsappService.sendText(
-        to,
-        `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
-      );
+    const enviadoPorChatwoot = await enviarFotoPorChatwoot(to);
+    if (!enviadoPorChatwoot) {
+      try {
+        await whatsappService.sendImage(to, getFachadaUrl(), captionFotoSede());
+      } catch (error) {
+        console.error("⚠️ No se pudo enviar foto guía de la sede por Meta:", error.message);
+        await whatsappService.sendText(
+          to,
+          `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
+        );
+      }
     }
   }
 
@@ -57,14 +77,17 @@ async function enviarExtrasMeta(to, textoOriginal) {
 
 async function enviarExtrasTwilio(to, textoOriginal) {
   if (esMensajePromocion(textoOriginal)) {
-    try {
-      await twilioService.sendTwilioMedia(to, captionFotoSede(), getFachadaUrl());
-    } catch (error) {
-      console.error("⚠️ No se pudo enviar foto guía por Twilio:", error.message);
-      await twilioService.sendTwilioText(
-        to,
-        `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
-      );
+    const enviadoPorChatwoot = await enviarFotoPorChatwoot(to);
+    if (!enviadoPorChatwoot) {
+      try {
+        await twilioService.sendTwilioMedia(to, captionFotoSede(), getFachadaUrl());
+      } catch (error) {
+        console.error("⚠️ No se pudo enviar foto guía por Twilio:", error.message);
+        await twilioService.sendTwilioText(
+          to,
+          `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
+        );
+      }
     }
   }
 
