@@ -10,7 +10,6 @@ instalarMediaHooks();
 
 const healthRoutes = require("./routes/health");
 const chatwootContext = require("./routes/chatwootContext");
-const botMediaWebhookGuard = require("./routes/botMediaWebhookGuard");
 const fotoSedeMiddleware = require("./routes/fotoSedeMiddleware");
 const habilitacionMiddleware = require("./routes/habilitacionMiddleware");
 const aiFallback = require("./routes/aiFallback");
@@ -141,10 +140,9 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 app.use("/", healthRoutes);
 
 app.use("/webhook", chatwootContext);
-app.use("/webhook", botMediaWebhookGuard);
 
-// La foto se programa al detectar el Sí de renovación, antes de que el flujo
-// principal cambie de estado. Así no depende de reconocer el texto saliente.
+// Detecta el Sí de renovación antes de que el flujo cambie de estado y envía
+// la foto con upload binario + media_id directamente por WhatsApp Cloud API.
 app.use("/webhook", fotoSedeMiddleware);
 
 app.use("/webhook", habilitacionMiddleware);
@@ -155,5 +153,5 @@ app.listen(PORT, () => {
   console.log(`✅ Bot CRC VIP activo en puerto ${PORT}`);
   console.log("📊 Dashboard protegido en / y /dashboard");
   console.log("🔎 API stats activa en /api/stats");
-  console.log("🖼️ Foto guía lista para envío directo por Chatwoot");
+  console.log("🖼️ Foto guía configurada con upload directo a Meta");
 });
