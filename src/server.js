@@ -5,6 +5,7 @@ const path = require("path");
 
 const { PORT } = require("./config");
 const healthRoutes = require("./routes/health");
+const chatwootContext = require("./routes/chatwootContext");
 const aiFallback = require("./routes/aiFallback");
 const whatsappRoutes = require("./routes/whatsapp");
 const Stats = require("./services/stats");
@@ -130,9 +131,12 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 
 app.use("/", healthRoutes);
 
+// Primero vinculamos el teléfono con el ID real de conversación de Chatwoot.
+// Así cualquier nota del bot se escribe en la misma conversación que ve el asesor.
+app.use("/webhook", chatwootContext);
+
 // La IA solo interviene como fallback cuando el usuario hace una pregunta
-// que no corresponde a una opción o dato esperado del flujo. El primer
-// mensaje siempre sigue entrando al flujo comercial definido por el CRC.
+// que no corresponde a una opción o dato esperado del flujo.
 app.use("/webhook", aiFallback);
 app.use("/webhook", whatsappRoutes);
 
