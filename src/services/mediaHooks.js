@@ -69,11 +69,19 @@ function instalarMediaHooks() {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
 
-    // Cuando la conversación viene de Chatwoot, usamos input_select. La
-    // versión 4.x de Chatwoot convierte este tipo en botones/listas nativas
-    // de WhatsApp Cloud y el toque vuelve como un mensaje del usuario.
-    let result = await intentarChatwootInteractivo(to, limpio);
-    if (!result) result = await originalMeta(to, limpio);
+    let result = null;
+
+    // PRIORIDAD 1: WhatsApp Cloud API directa. Esta ruta sí conserva los
+    // botones reply/list y el encabezado con imagen. Las credenciales pueden
+    // venir de Render o recuperarse al iniciar desde el inbox de Chatwoot.
+    if (whatsappService.whatsappConfigurado()) {
+      result = await originalMeta(to, limpio);
+    } else {
+      // PRIORIDAD 2: input_select de Chatwoot. Se mantiene únicamente como
+      // respaldo para instalaciones donde no podamos obtener el token Meta.
+      result = await intentarChatwootInteractivo(to, limpio);
+      if (!result) result = await originalMeta(to, limpio);
+    }
 
     await enviarExtrasMeta(to, original);
     return result;
@@ -84,10 +92,16 @@ function instalarMediaHooks() {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
 
-    // También se intenta Chatwoot antes de Twilio. Esto es importante porque
-    // los webhooks de Chatwoot usan destinos con prefijo whatsapp:+57...
-    let result = await intentarChatwootInteractivo(to, limpio);
-    if (!result) result = await originalTwilio(to, limpio);
+    let result = null;
+
+    if (whatsappService.whatsappConfigurado()) {
+      // originalTwilio delega a whatsappService.sendText cuando Meta está
+      // disponible, por lo que termina usando los botones nativos directos.
+      result = await originalTwilio(to, limpio);
+    } else {
+      result = await intentarChatwootInteractivo(to, limpio);
+      if (!result) result = await originalTwilio(to, limpio);
+    }
 
     if (!whatsappService.whatsappConfigurado()) {
       await enviarExtrasTwilio(to, original);
