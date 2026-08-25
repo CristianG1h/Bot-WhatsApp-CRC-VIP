@@ -12,6 +12,7 @@ instalarMediaHooks();
 
 const healthRoutes = require("./routes/health");
 const chatwootContext = require("./routes/chatwootContext");
+const botMediaWebhookGuard = require("./routes/botMediaWebhookGuard");
 const habilitacionMiddleware = require("./routes/habilitacionMiddleware");
 const aiFallback = require("./routes/aiFallback");
 const whatsappRoutes = require("./routes/whatsapp");
@@ -112,8 +113,7 @@ function protegerDashboard(req, res, next) {
   return next();
 }
 
-// La foto de la sede debe ser pública para que Meta/Twilio puedan descargarla
-// al enviarla como adjunto de WhatsApp.
+// La foto queda disponible también como respaldo público para Meta/Twilio.
 app.use("/media", express.static(mediaPath, { maxAge: "7d" }));
 app.use("/public", protegerDashboard, express.static(publicPath));
 
@@ -145,6 +145,10 @@ app.use("/", healthRoutes);
 // Primero vinculamos el teléfono con el ID real de conversación de Chatwoot.
 app.use("/webhook", chatwootContext);
 
+// Los adjuntos enviados por el propio bot desde Chatwoot no deben activar
+// el modo de asesor humano ni pausar el flujo automático.
+app.use("/webhook", botMediaWebhookGuard);
+
 // Las consultas sobre habilitación/acreditación tienen prioridad sobre la IA
 // y no alteran el paso actual del agendamiento.
 app.use("/webhook", habilitacionMiddleware);
@@ -157,5 +161,5 @@ app.listen(PORT, () => {
   console.log(`✅ Bot CRC VIP activo en puerto ${PORT}`);
   console.log("📊 Dashboard protegido en / y /dashboard");
   console.log("🔎 API stats activa en /api/stats");
-  console.log("🖼️ Foto guía pública en /media/fachada-crc-vip.jpg");
+  console.log("🖼️ Foto guía lista para envío por Chatwoot/Meta/Twilio");
 });
