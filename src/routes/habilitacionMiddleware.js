@@ -174,9 +174,12 @@ router.use(async (req, res, next) => {
     const incoming = extraerIncoming(req);
     if (!incoming) return next();
 
-    // El primer mensaje siempre conserva la interacción inicial definida para el CRC.
     const session = getSession(incoming.from);
-    if (session.step === "MENU_INICIAL" || session.step === "HUMANO") return next();
+
+    // Si un asesor ya tomó la conversación, no interrumpimos su atención.
+    // En cualquier otro estado —incluso antes de iniciar o después de una cita—
+    // una consulta sobre habilitación/acreditación recibe el soporte oficial.
+    if (session.step === "HUMANO") return next();
     if (!esConsultaHabilitacion(incoming.text)) return next();
 
     if (esDuplicado(incoming)) {
