@@ -1,17 +1,17 @@
 "use strict";
 
-const DEFAULT_PUBLIC_URL = "https://bot-whatsapp-crc-vip.onrender.com";
+// Usamos la URL RAW pública de GitHub para la foto de la sede.
+// Es más estable para WhatsApp Cloud API/Twilio que depender de que Render
+// termine de servir el archivo antes de que Meta intente descargarlo.
+const FACHADA_URL =
+  "https://raw.githubusercontent.com/CristianG1h/Bot-WhatsApp-CRC-VIP/main/src/assets/fachada-crc-vip.jpg";
 
 const ONAC_CERT_URL = "https://onac.org.co/certificados/22-CEP-076.pdf";
 const ONAC_DIRECTORY_URL =
   "https://onac.org.co/directorio3/index.php/acreditaciones/22-CEP-076";
 
-function getPublicBaseUrl() {
-  return String(process.env.PUBLIC_URL || DEFAULT_PUBLIC_URL).replace(/\/$/, "");
-}
-
 function getFachadaUrl() {
-  return `${getPublicBaseUrl()}/media/fachada-crc-vip.jpg`;
+  return FACHADA_URL;
 }
 
 function normalizarTexto(valor) {
@@ -73,6 +73,7 @@ function limpiarMensajeHabilitacionAntiguo(texto) {
 }
 
 module.exports = {
+  FACHADA_URL,
   ONAC_CERT_URL,
   ONAC_DIRECTORY_URL,
   getFachadaUrl,
