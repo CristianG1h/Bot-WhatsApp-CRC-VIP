@@ -5,8 +5,11 @@ const path = require("path");
 const router = express.Router();
 
 const { getSession } = require("../utils/sessions");
-const { sendAttachment } = require("../services/chatwootMedia");
-const { sendImage, sendText } = require("../services/whatsapp");
+const {
+  whatsappConfigurado,
+  sendImageFile,
+  sendText,
+} = require("../services/whatsapp");
 const { sendTwilioMedia, sendTwilioText } = require("../services/twilio");
 const { logOutgoingMessage } = require("../services/chatwoot");
 const { getFachadaUrl, captionFotoSede } = require("../services/crcMedia");
@@ -38,7 +41,12 @@ function extraer(req) {
     const isPrivate = payload.private === true || payload.message?.private === true;
     if (isPrivate || messageType !== "incoming") return null;
 
-    const sender = payload.sender || payload.message?.sender || payload.conversation?.contact || payload.contact || {};
+    const sender =
+      payload.sender ||
+      payload.message?.sender ||
+      payload.conversation?.contact ||
+      payload.contact ||
+      {};
     const contact = payload.conversation?.contact || payload.contact || sender;
     const phone =
       sender.phone_number ||
@@ -82,50 +90,64 @@ function key(from) {
 async function enviarFoto(incoming) {
   const caption = captionFotoSede();
   let enviado = false;
+  let canal = null;
 
-  // Primera opción: Chatwoot sube el archivo binario directamente al canal.
-  try {
-    await sendAttachment(incoming.from, FACHADA_LOCAL, {
-      filename: "fachada-vip-crc-galerias.jpg",
-      mimeType: "image/jpeg",
-      caption,
-    });
-    enviado = true;
-  } catch (error) {
-    console.error("⚠️ Foto por Chatwoot falló:", error.message);
+  // Ruta principal: cargamos el JPG binario directamente a Meta y luego lo
+  // enviamos por media_id. Así Meta no tiene que descargar ninguna URL externa.
+  if (whatsappConfigurado()) {
+    try {
+      await sendImageFile(incoming.from, FACHADA_LOCAL, caption, "image/jpeg");
+      enviado = true;
+      canal = "Meta media_id";
+    } catch (error) {
+      console.error("⚠️ Foto directa por Meta falló:", error.message);
+    }
+  } else {
+    console.warn("⚠️ Meta no configurado para envío binario de la foto.");
   }
 
-  // Respaldo por el proveedor original si Chatwoot no pudo adjuntarla.
+  // Respaldo real de entrega: Twilio, si está configurado.
   if (!enviado) {
     try {
-      if (incoming.source === "twilio") {
-        await sendTwilioMedia(incoming.from, caption, getFachadaUrl());
-      } else {
-        await sendImage(incoming.from, getFachadaUrl(), caption);
+      const result = await sendTwilioMedia(incoming.from, caption, getFachadaUrl());
+      if (result) {
+        enviado = true;
+        canal = "Twilio";
+        console.log("🖼️ Foto enviada por Twilio:", result.sid || "sin SID");
       }
-      enviado = true;
     } catch (error) {
-      console.error("⚠️ Foto por canal WhatsApp falló:", error.message);
+      console.error("⚠️ Foto por Twilio falló:", error.message);
     }
   }
 
-  // Último respaldo visible: enlace, para que nunca desaparezca silenciosamente.
+  // Último respaldo visible: enlace en texto. No consideramos un adjunto
+  // creado dentro de Chatwoot como entrega hasta que WhatsApp realmente lo reciba.
   if (!enviado) {
     const fallback = `${caption}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`;
     try {
-      if (incoming.source === "twilio") await sendTwilioText(incoming.from, fallback);
-      else await sendText(incoming.from, fallback);
-      enviado = true;
+      let result = null;
+      if (incoming.source === "twilio") {
+        result = await sendTwilioText(incoming.from, fallback);
+      } else {
+        result = await sendText(incoming.from, fallback);
+      }
+      if (result) {
+        enviado = true;
+        canal = "enlace visible";
+      }
     } catch (error) {
-      console.error("❌ No fue posible entregar la guía de la sede:", error.message);
+      console.error("❌ No fue posible entregar ni el enlace de la foto:", error.message);
     }
   }
 
   if (enviado) {
+    console.log(`✅ Foto guía entregada por ${canal}:`, key(incoming.from));
     await logOutgoingMessage(
       incoming.from,
-      "📷 Foto guía de la fachada de VIP CRC Galerías enviada al usuario."
+      `📷 Foto guía de la fachada de VIP CRC Galerías enviada al usuario por ${canal}.`
     ).catch(() => null);
+  } else {
+    console.error("❌ FOTO NO ENTREGADA al usuario:", key(incoming.from));
   }
 }
 
@@ -144,8 +166,8 @@ router.use((req, _res, next) => {
     if (now - last < 10000) return next();
     programados.set(id, now);
 
-    // El flujo principal envía primero el texto de la promoción. Un pequeño
-    // retraso garantiza que la foto quede inmediatamente debajo de ese mensaje.
+    // El flujo principal envía primero el mensaje de promoción. Después se
+    // envía la foto directamente por la API de medios de Meta.
     setTimeout(() => {
       enviarFoto(incoming).catch((error) =>
         console.error("❌ Error enviando foto programada:", error.message)
