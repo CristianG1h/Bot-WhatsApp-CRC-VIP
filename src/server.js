@@ -6,13 +6,12 @@ const path = require("path");
 const { PORT } = require("./config");
 const { instalarMediaHooks } = require("./services/mediaHooks");
 
-// Los hooks deben instalarse antes de cargar los routers, porque estos
-// capturan las funciones de envío al importarse.
 instalarMediaHooks();
 
 const healthRoutes = require("./routes/health");
 const chatwootContext = require("./routes/chatwootContext");
 const botMediaWebhookGuard = require("./routes/botMediaWebhookGuard");
+const fotoSedeMiddleware = require("./routes/fotoSedeMiddleware");
 const habilitacionMiddleware = require("./routes/habilitacionMiddleware");
 const aiFallback = require("./routes/aiFallback");
 const whatsappRoutes = require("./routes/whatsapp");
@@ -113,7 +112,6 @@ function protegerDashboard(req, res, next) {
   return next();
 }
 
-// La foto queda disponible también como respaldo público para Meta/Twilio.
 app.use("/media", express.static(mediaPath, { maxAge: "7d" }));
 app.use("/public", protegerDashboard, express.static(publicPath));
 
@@ -142,18 +140,14 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 
 app.use("/", healthRoutes);
 
-// Primero vinculamos el teléfono con el ID real de conversación de Chatwoot.
 app.use("/webhook", chatwootContext);
-
-// Los adjuntos enviados por el propio bot desde Chatwoot no deben activar
-// el modo de asesor humano ni pausar el flujo automático.
 app.use("/webhook", botMediaWebhookGuard);
 
-// Las consultas sobre habilitación/acreditación tienen prioridad sobre la IA
-// y no alteran el paso actual del agendamiento.
-app.use("/webhook", habilitacionMiddleware);
+// La foto se programa al detectar el Sí de renovación, antes de que el flujo
+// principal cambie de estado. Así no depende de reconocer el texto saliente.
+app.use("/webhook", fotoSedeMiddleware);
 
-// La IA interviene como fallback para preguntas no cubiertas por el flujo.
+app.use("/webhook", habilitacionMiddleware);
 app.use("/webhook", aiFallback);
 app.use("/webhook", whatsappRoutes);
 
@@ -161,5 +155,5 @@ app.listen(PORT, () => {
   console.log(`✅ Bot CRC VIP activo en puerto ${PORT}`);
   console.log("📊 Dashboard protegido en / y /dashboard");
   console.log("🔎 API stats activa en /api/stats");
-  console.log("🖼️ Foto guía lista para envío por Chatwoot/Meta/Twilio");
+  console.log("🖼️ Foto guía lista para envío directo por Chatwoot");
 });
