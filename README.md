@@ -8,13 +8,15 @@ El primer mensaje que envíe un usuario siempre inicia la misma interacción com
 
 1. Pregunta si está interesado en renovar la licencia.
 2. Si responde **Sí**, muestra la promoción de renovación y pregunta si desea agendar.
-3. Si responde **No**, ofrece primera vez, información o asesor.
-4. El agendamiento muestra únicamente días disponibles.
-5. Domingos y festivos de Colombia se excluyen automáticamente.
-6. Los sábados usan horario de 7:00 a.m. a 11:30 a.m.; lunes a viernes, de 7:00 a.m. a 3:30 p.m.
-7. Solicita nombre completo, cédula, celular y correo.
-8. Muestra un resumen para confirmar.
-9. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
+3. Después del mensaje de promoción, envía la foto guía de la fachada de VIP CRC Galerías. La imagen se carga como binario a WhatsApp Cloud API y se envía mediante `media_id`, evitando depender de URLs externas.
+4. Si responde **No**, ofrece primera vez, información o asesor.
+5. El agendamiento muestra únicamente días disponibles.
+6. Domingos y festivos de Colombia se excluyen automáticamente.
+7. Los sábados usan horario de 7:00 a.m. a 11:30 a.m.; lunes a viernes, de 7:00 a.m. a 3:30 p.m.
+8. Solicita nombre completo, cédula, celular y correo.
+9. Muestra un resumen para confirmar.
+10. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
+11. Después de la confirmación final, comparte la acreditación ONAC configurada para el CRC.
 
 ## IA como fallback
 
@@ -29,21 +31,28 @@ Ejemplos:
 
 Después de responder, la IA recuerda al usuario el paso en el que estaba para que pueda continuar con el agendamiento. Si `GROQ_API_KEY` no está configurada o el servicio de IA falla, el flujo normal continúa sin bloquearse.
 
-La IA tiene contexto autorizado del CRC y reglas para no inventar precios, resultados de RUNT/SIMIT, comparendos, diagnósticos, normas externas o datos que deban confirmar los asesores.
+Las consultas relacionadas con **habilitación, acreditación, ONAC, certificado, aval o autorización del CRC** se atienden con prioridad y comparten el soporte oficial sin perder el paso del agendamiento.
 
-## Estructura
+## Estructura principal
 
 ```text
 src/
 ├── server.js
 ├── config.js
+├── assets/
+│   └── fachada-crc-vip.jpg
 ├── routes/
 │   ├── aiFallback.js
+│   ├── chatwootContext.js
+│   ├── fotoSedeMiddleware.js
+│   ├── habilitacionMiddleware.js
 │   ├── health.js
 │   └── whatsapp.js
 ├── services/
 │   ├── chatwoot.js
+│   ├── crcMedia.js
 │   ├── email.js
+│   ├── mediaHooks.js
 │   ├── stats.js
 │   ├── twilio.js
 │   └── whatsapp.js
@@ -55,8 +64,6 @@ src/
 └── public/
     └── dashboard.html
 ```
-
-El flujo comercial, el calendario y la captura de datos están consolidados en `src/routes/whatsapp.js`. `src/routes/aiFallback.js` es una capa pequeña y aislada únicamente para preguntas no cubiertas por el flujo. Se eliminaron los servicios heredados de consultas automáticas RUNT/SIMIT y las capas duplicadas del webhook.
 
 ## Endpoints principales
 
@@ -110,6 +117,7 @@ npm start
 
 - El calendario trabaja con la zona horaria `America/Bogota`.
 - Los festivos colombianos se calculan en código, incluidos los trasladables por Ley Emiliani y los relacionados con Pascua.
-- Las notas privadas de Chatwoot registran los mensajes entrantes y las respuestas del bot para conservar trazabilidad.
+- Las notas privadas de Chatwoot registran las respuestas del bot para conservar trazabilidad.
 - Cuando un asesor responde desde Chatwoot, el bot pausa la automatización temporalmente para evitar respuestas simultáneas.
+- La foto de la sede se envía directamente por WhatsApp Cloud API usando upload de medios y `media_id`; Twilio y un enlace visible quedan como respaldo.
 - La IA recibe el mensaje sanitizado para omitir correos y secuencias numéricas largas antes de enviarlo al proveedor.
