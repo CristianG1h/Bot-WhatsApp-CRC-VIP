@@ -3,17 +3,15 @@
 const express = require("express");
 const router = express.Router();
 const { getChatwootNoteStatus } = require("../services/chatwoot");
-const { whatsappConfigurado } = require("../services/whatsapp");
+const { getTwilioStatus } = require("../services/twilio");
 
 router.get("/health", (req, res) => {
   res.json({
     ok: true,
     service: "Bot WhatsApp CRC VIP",
+    channel: "twilio_whatsapp",
+    twilio: getTwilioStatus(),
     chatwootNotes: getChatwootNoteStatus(),
-    whatsappCloud: {
-      configured: whatsappConfigurado(),
-      source: process.env.META_CONFIG_SOURCE || "unknown",
-    },
   });
 });
 
