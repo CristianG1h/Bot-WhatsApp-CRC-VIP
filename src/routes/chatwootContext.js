@@ -3,9 +3,6 @@
 const express = require("express");
 const router = express.Router();
 const { rememberConversation } = require("../services/chatwoot");
-const {
-  rememberInteractiveConversation,
-} = require("../services/chatwootInteractive");
 
 function normalizarFrom(phone) {
   const value = String(phone || "").trim();
@@ -14,7 +11,7 @@ function normalizarFrom(phone) {
   return `whatsapp:${value.startsWith("+") ? value : `+${value}`}`;
 }
 
-router.use(async (req, res, next) => {
+router.use(async (req, _res, next) => {
   try {
     if (req.method !== "POST" || req.path !== "/chatwoot") return next();
 
@@ -24,6 +21,8 @@ router.use(async (req, res, next) => {
       payload.message?.conversation_id ||
       payload.conversation_id ||
       null;
+
+    if (!conversationId) return next();
 
     const sender =
       payload.sender ||
@@ -42,25 +41,8 @@ router.use(async (req, res, next) => {
       "";
 
     const from = normalizarFrom(phone);
-
-    if (conversationId && from) {
+    if (from) {
       await rememberConversation(from, conversationId);
-      rememberInteractiveConversation(from, conversationId);
-    }
-
-    // Los menús input_select creados por el propio bot regresan como mensajes
-    // outgoing en el webhook. No deben interpretarse como una respuesta humana
-    // del asesor ni pausar el bot.
-    const messageType = payload.message_type || payload.message?.message_type;
-    const attrs =
-      payload.content_attributes || payload.message?.content_attributes || {};
-    const esInteractivoBot =
-      attrs.bot_crc_interactive === true ||
-      attrs.bot_crc_interactive === "true";
-
-    if (messageType === "outgoing" && esInteractivoBot) {
-      console.log("🤖 Menú interactivo del bot detectado; el flujo continúa activo");
-      return res.status(200).send("OK");
     }
   } catch (error) {
     console.error("⚠️ No se pudo vincular la conversación de Chatwoot:", error.message);
