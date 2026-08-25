@@ -26,7 +26,7 @@ async function enviarExtrasMeta(to, textoOriginal) {
     );
   } catch (error) {
     console.error("⚠️ No se pudo enviar acreditación ONAC:", error.message);
-    await whatsappService.sendText(
+    await whatsappService.sendTextPlain(
       to,
       `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
     );
@@ -65,7 +65,14 @@ function instalarMediaHooks() {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
     const result = await originalTwilio(to, limpio);
-    await enviarExtrasTwilio(to, original);
+
+    // Si Cloud API está configurada, originalTwilio ya delegó el envío al
+    // servicio de Meta. Ese servicio ejecuta el hook de acreditación, así que
+    // no debemos adjuntar el certificado una segunda vez por Twilio.
+    if (!whatsappService.whatsappConfigurado()) {
+      await enviarExtrasTwilio(to, original);
+    }
+
     return result;
   };
 }
