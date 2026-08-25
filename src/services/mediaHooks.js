@@ -2,7 +2,6 @@
 
 const whatsappService = require("./whatsapp");
 const twilioService = require("./twilio");
-const { trySendInteractive } = require("./chatwootInteractive");
 const {
   ONAC_CERT_URL,
   captionAcreditacion,
@@ -26,7 +25,7 @@ async function enviarExtrasMeta(to, textoOriginal) {
       captionAcreditacion()
     );
   } catch (error) {
-    console.error("⚠️ No se pudo enviar acreditación ONAC:", error.message);
+    console.error("⚠️ No se pudo enviar acreditación ONAC por Meta:", error.message);
     await whatsappService.sendTextPlain(
       to,
       `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
@@ -41,22 +40,10 @@ async function enviarExtrasTwilio(to, textoOriginal) {
     await twilioService.sendTwilioMedia(to, captionAcreditacion(), ONAC_CERT_URL);
   } catch (error) {
     console.error("⚠️ No se pudo enviar acreditación ONAC por Twilio:", error.message);
-    await twilioService.sendTwilioText(
+    await twilioService.sendTwilioTextPlain(
       to,
       `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
     );
-  }
-}
-
-async function intentarChatwootInteractivo(to, texto) {
-  try {
-    return await trySendInteractive(to, texto);
-  } catch (error) {
-    console.error(
-      "⚠️ Chatwoot no pudo enviar el menú interactivo; se usa el canal de respaldo:",
-      error.message
-    );
-    return null;
   }
 }
 
@@ -68,21 +55,7 @@ function instalarMediaHooks() {
   whatsappService.sendText = async (to, body) => {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
-
-    let result = null;
-
-    // PRIORIDAD 1: WhatsApp Cloud API directa. Esta ruta sí conserva los
-    // botones reply/list y el encabezado con imagen. Las credenciales pueden
-    // venir de Render o recuperarse al iniciar desde el inbox de Chatwoot.
-    if (whatsappService.whatsappConfigurado()) {
-      result = await originalMeta(to, limpio);
-    } else {
-      // PRIORIDAD 2: input_select de Chatwoot. Se mantiene únicamente como
-      // respaldo para instalaciones donde no podamos obtener el token Meta.
-      result = await intentarChatwootInteractivo(to, limpio);
-      if (!result) result = await originalMeta(to, limpio);
-    }
-
+    const result = await originalMeta(to, limpio);
     await enviarExtrasMeta(to, original);
     return result;
   };
@@ -92,21 +65,12 @@ function instalarMediaHooks() {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
 
-    let result = null;
-
-    if (whatsappService.whatsappConfigurado()) {
-      // originalTwilio delega a whatsappService.sendText cuando Meta está
-      // disponible, por lo que termina usando los botones nativos directos.
-      result = await originalTwilio(to, limpio);
-    } else {
-      result = await intentarChatwootInteractivo(to, limpio);
-      if (!result) result = await originalTwilio(to, limpio);
-    }
-
-    if (!whatsappService.whatsappConfigurado()) {
-      await enviarExtrasTwilio(to, original);
-    }
-
+    // CRC trabaja por Twilio. No pasamos por input_select de Chatwoot ni
+    // intentamos convertir este número en un sender de Meta Cloud API.
+    // originalTwilio detecta menús y usa Twilio Content API para Quick Reply
+    // y List Picker; si no corresponde, envía texto normal por Twilio.
+    const result = await originalTwilio(to, limpio);
+    await enviarExtrasTwilio(to, original);
     return result;
   };
 }
