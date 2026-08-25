@@ -30,6 +30,10 @@ async function enviarExtrasMeta(to, textoOriginal) {
       await whatsappService.sendImage(to, getFachadaUrl(), captionFotoSede());
     } catch (error) {
       console.error("⚠️ No se pudo enviar foto guía de la sede:", error.message);
+      await whatsappService.sendText(
+        to,
+        `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
+      );
     }
   }
 
@@ -43,6 +47,10 @@ async function enviarExtrasMeta(to, textoOriginal) {
       );
     } catch (error) {
       console.error("⚠️ No se pudo enviar acreditación ONAC:", error.message);
+      await whatsappService.sendText(
+        to,
+        `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
+      );
     }
   }
 }
@@ -53,6 +61,10 @@ async function enviarExtrasTwilio(to, textoOriginal) {
       await twilioService.sendTwilioMedia(to, captionFotoSede(), getFachadaUrl());
     } catch (error) {
       console.error("⚠️ No se pudo enviar foto guía por Twilio:", error.message);
+      await twilioService.sendTwilioText(
+        to,
+        `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
+      );
     }
   }
 
@@ -61,6 +73,10 @@ async function enviarExtrasTwilio(to, textoOriginal) {
       await twilioService.sendTwilioMedia(to, captionAcreditacion(), ONAC_CERT_URL);
     } catch (error) {
       console.error("⚠️ No se pudo enviar acreditación ONAC por Twilio:", error.message);
+      await twilioService.sendTwilioText(
+        to,
+        `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
+      );
     }
   }
 }
