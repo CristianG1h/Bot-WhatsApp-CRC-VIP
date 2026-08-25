@@ -1,106 +1,49 @@
 "use strict";
 
-const path = require("path");
 const whatsappService = require("./whatsapp");
 const twilioService = require("./twilio");
-const { sendAttachment } = require("./chatwootMedia");
 const {
   ONAC_CERT_URL,
-  getFachadaUrl,
-  captionFotoSede,
   captionAcreditacion,
   limpiarMensajeHabilitacionAntiguo,
 } = require("./crcMedia");
 
-const FACHADA_LOCAL = path.join(__dirname, "..", "assets", "fachada-crc-vip.jpg");
 let instalado = false;
-
-function esMensajePromocion(texto) {
-  const t = String(texto || "");
-  return (
-    t.includes("Renovación o refrendación: $180.000") &&
-    t.includes("¿Deseas agendar tu cita?")
-  );
-}
 
 function esConfirmacionFinal(texto) {
   return String(texto || "").includes("Cita preconfirmada - VIP CRC Galerías");
 }
 
-async function enviarFotoPorChatwoot(to) {
-  try {
-    await sendAttachment(to, FACHADA_LOCAL, {
-      filename: "fachada-vip-crc-galerias.jpg",
-      mimeType: "image/jpeg",
-      caption: captionFotoSede(),
-    });
-    return true;
-  } catch (error) {
-    console.error("⚠️ Chatwoot no pudo enviar la foto de la sede:", error.message);
-    return false;
-  }
-}
-
 async function enviarExtrasMeta(to, textoOriginal) {
-  if (esMensajePromocion(textoOriginal)) {
-    const enviadoPorChatwoot = await enviarFotoPorChatwoot(to);
-    if (!enviadoPorChatwoot) {
-      try {
-        await whatsappService.sendImage(to, getFachadaUrl(), captionFotoSede());
-      } catch (error) {
-        console.error("⚠️ No se pudo enviar foto guía de la sede por Meta:", error.message);
-        await whatsappService.sendText(
-          to,
-          `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
-        );
-      }
-    }
-  }
+  if (!esConfirmacionFinal(textoOriginal)) return;
 
-  if (esConfirmacionFinal(textoOriginal)) {
-    try {
-      await whatsappService.sendDocument(
-        to,
-        ONAC_CERT_URL,
-        "Certificado_ONAC_22-CEP-076_VIP_Salud_Ocupacional.pdf",
-        captionAcreditacion()
-      );
-    } catch (error) {
-      console.error("⚠️ No se pudo enviar acreditación ONAC:", error.message);
-      await whatsappService.sendText(
-        to,
-        `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
-      );
-    }
+  try {
+    await whatsappService.sendDocument(
+      to,
+      ONAC_CERT_URL,
+      "Certificado_ONAC_22-CEP-076_VIP_Salud_Ocupacional.pdf",
+      captionAcreditacion()
+    );
+  } catch (error) {
+    console.error("⚠️ No se pudo enviar acreditación ONAC:", error.message);
+    await whatsappService.sendText(
+      to,
+      `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
+    );
   }
 }
 
 async function enviarExtrasTwilio(to, textoOriginal) {
-  if (esMensajePromocion(textoOriginal)) {
-    const enviadoPorChatwoot = await enviarFotoPorChatwoot(to);
-    if (!enviadoPorChatwoot) {
-      try {
-        await twilioService.sendTwilioMedia(to, captionFotoSede(), getFachadaUrl());
-      } catch (error) {
-        console.error("⚠️ No se pudo enviar foto guía por Twilio:", error.message);
-        await twilioService.sendTwilioText(
-          to,
-          `${captionFotoSede()}\n\n🖼️ Foto de referencia: ${getFachadaUrl()}`
-        );
-      }
-    }
-  }
+  if (!esConfirmacionFinal(textoOriginal)) return;
 
-  if (esConfirmacionFinal(textoOriginal)) {
-    try {
-      await twilioService.sendTwilioMedia(to, captionAcreditacion(), ONAC_CERT_URL);
-    } catch (error) {
-      console.error("⚠️ No se pudo enviar acreditación ONAC por Twilio:", error.message);
-      await twilioService.sendTwilioText(
-        to,
-        `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
-      );
-    }
+  try {
+    await twilioService.sendTwilioMedia(to, captionAcreditacion(), ONAC_CERT_URL);
+  } catch (error) {
+    console.error("⚠️ No se pudo enviar acreditación ONAC por Twilio:", error.message);
+    await twilioService.sendTwilioText(
+      to,
+      `${captionAcreditacion()}\n\n📎 Certificado oficial: ${ONAC_CERT_URL}`
+    );
   }
 }
 
