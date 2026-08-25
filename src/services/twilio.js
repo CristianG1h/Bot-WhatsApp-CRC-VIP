@@ -1,6 +1,7 @@
 "use strict";
 
 const twilio = require("twilio");
+const whatsappService = require("./whatsapp");
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -25,6 +26,13 @@ async function sendTwilioText(to, body) {
   const mensaje = String(body || "").trim();
   if (!mensaje) return null;
 
+  // Este proyecto usa WhatsApp Cloud API como canal principal. Cuando Meta está
+  // configurado, incluso los eventos que llegan desde Chatwoot se responden por
+  // Cloud API para conservar botones, listas e imágenes interactivas.
+  if (whatsappService.whatsappConfigurado()) {
+    return whatsappService.sendText(to, mensaje);
+  }
+
   if (!twilioConfigurado()) {
     console.log("⚠️ Twilio no configurado. Mensaje:", mensaje);
     return null;
@@ -40,6 +48,12 @@ async function sendTwilioText(to, body) {
 async function sendTwilioMedia(to, body, mediaUrl) {
   const mensaje = String(body || "").trim();
   const url = String(mediaUrl || "").trim();
+
+  if (whatsappService.whatsappConfigurado()) {
+    if (!url) return whatsappService.sendText(to, mensaje);
+    return whatsappService.sendImage(to, url, mensaje);
+  }
+
   if (!url) return sendTwilioText(to, mensaje);
 
   if (!twilioConfigurado()) {
