@@ -11,24 +11,25 @@ const messagingServiceSid = String(
 
 const client = twilio(accountSid || undefined, authToken || undefined);
 
-// Twilio usa raw.githubusercontent.com en sus propios ejemplos de twilio/media.
-// Mantenemos una URL estática, pública y con extensión .jpg.
+const DEFAULT_PUBLIC_URL = "https://bot-whatsapp-crc-vip.onrender.com";
+const PUBLIC_URL = String(process.env.PUBLIC_URL || DEFAULT_PUBLIC_URL)
+  .trim()
+  .replace(/\/$/, "");
+
+const FACHADA_RENDER_URL =
+  String(process.env.CRC_FACHADA_URL || "").trim() ||
+  `${PUBLIC_URL}/media/fachada-crc-vip.jpg?v=20260826`;
+
 const FACHADA_REPO_URL =
   "https://raw.githubusercontent.com/CristianG1h/Bot-WhatsApp-CRC-VIP/main/src/assets/fachada-crc-vip.jpg";
-const FACHADA_RENDER_URL = String(process.env.PUBLIC_URL || "").trim()
-  ? `${String(process.env.PUBLIC_URL).replace(/\/$/, "")}/media/fachada-crc-vip.jpg`
-  : "";
 
-const CONTENT_URL = "https://content.twilio.com/v1/Content";
-const FRIENDLY_NAME = "crc_vip_fachada_media_v1";
 const CAPTION =
   "📍 Guía para ubicar nuestra sede\nVIP CRC Galerías — Cra. 28A #51-70, barrio Galerías, Bogotá.\n🚗 Contamos con parqueadero.";
 
-let contentSid = null;
-let pendingContentSid = null;
-let templateNormalized = false;
 let lastDelivery = {
+  strategy: "media_url",
   messageSid: null,
+  mediaUrl: null,
   status: null,
   errorCode: null,
   errorMessage: null,
@@ -49,167 +50,52 @@ function normalizarDestino(to) {
   return `whatsapp:+${value.replace(/\D/g, "")}`;
 }
 
-function authHeader() {
-  return `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
-}
-
-async function requestContent(url, options = {}) {
-  if (!configurado()) {
-    throw new Error("Twilio no está configurado completamente");
-  }
-
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers: {
-      Authorization: authHeader(),
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-
-  const raw = await response.text();
-  let data = {};
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    data = { raw };
-  }
-
-  if (!response.ok) {
-    throw new Error(`Twilio Content API ${response.status}: ${JSON.stringify(data)}`);
-  }
-
-  return data;
-}
-
-function payloadPlantillaMedia() {
-  // Importante: esta plantilla contiene SOLO twilio/media.
-  // La versión anterior tenía twilio/text + twilio/media y una variable {{1}}.
-  // Para la fachada no necesitamos ninguna variable ni fallback de texto.
-  return {
-    friendly_name: FRIENDLY_NAME,
-    types: {
-      "twilio/media": {
-        body: CAPTION,
-        media: [FACHADA_REPO_URL],
-      },
-    },
-  };
-}
-
-async function buscarContentSidExistente() {
-  const data = await requestContent(`${CONTENT_URL}?PageSize=500`);
-  const contents = Array.isArray(data?.contents) ? data.contents : [];
-  const found = contents.find(
-    (item) => String(item?.friendly_name || item?.friendlyName || "") === FRIENDLY_NAME
-  );
-  return found?.sid ? String(found.sid) : null;
-}
-
-async function normalizarPlantillaExistente(sid) {
-  // En la captura de Twilio la plantilla está "Not submitted", por lo que
-  // Twilio permite editarla sin cambiar el ContentSid. Esto evita crear más
-  // plantillas y corrige la v1 existente en el mismo lugar.
-  await requestContent(`${CONTENT_URL}/${sid}`, {
-    method: "PUT",
-    body: {
-      ...payloadPlantillaMedia(),
-      variables: {},
-    },
-  });
-
-  templateNormalized = true;
-  console.log(
-    "🧹 Plantilla de fachada normalizada (solo twilio/media):",
-    FRIENDLY_NAME,
-    sid
-  );
-  return sid;
-}
-
-async function crearPlantillaMedia() {
-  const data = await requestContent(CONTENT_URL, {
-    method: "POST",
-    body: {
-      ...payloadPlantillaMedia(),
-      language: "es",
-    },
-  });
-
-  const sid = String(data?.sid || "").trim();
-  if (!sid) throw new Error("Twilio no devolvió ContentSid para la fachada");
-
-  templateNormalized = true;
-  console.log("🆕 Plantilla Twilio Media creada:", FRIENDLY_NAME, sid);
-  return sid;
-}
-
-async function obtenerContentSid() {
-  if (contentSid) return contentSid;
-  if (pendingContentSid) return pendingContentSid;
-
-  pendingContentSid = (async () => {
-    let existing = null;
-
-    try {
-      existing = await buscarContentSidExistente();
-    } catch (error) {
-      console.warn("⚠️ No se pudo buscar plantilla de fachada:", error.message);
-    }
-
-    if (existing) {
-      // Reparamos automáticamente la plantilla que ya ves en Twilio.
-      contentSid = await normalizarPlantillaExistente(existing);
-      return contentSid;
-    }
-
-    contentSid = await crearPlantillaMedia();
-    return contentSid;
-  })();
-
-  try {
-    return await pendingContentSid;
-  } finally {
-    pendingContentSid = null;
-  }
-}
-
 function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function enviarMediaUrlFallback(to) {
-  const url = FACHADA_RENDER_URL || FACHADA_REPO_URL;
-
+async function crearMensajeMedia(to, mediaUrl) {
   const message = await client.messages.create({
     ...senderParams(),
     to: normalizarDestino(to),
     body: CAPTION,
-    mediaUrl: [url],
+    mediaUrl: [mediaUrl],
   });
 
+  lastDelivery = {
+    strategy: "media_url",
+    messageSid: message?.sid || null,
+    mediaUrl,
+    status: message?.status || null,
+    errorCode: message?.errorCode || null,
+    errorMessage: message?.errorMessage || null,
+    checkedAt: new Date().toISOString(),
+  };
+
   console.log(
-    "🛟 Fachada enviada por MediaUrl de respaldo:",
+    "🏢 Fachada enviada por MediaUrl:",
     normalizarDestino(to),
     message?.sid || "sin SID",
-    url
+    `status=${message?.status || "unknown"}`,
+    mediaUrl
   );
 
   return message;
 }
 
-async function verificarEntrega(messageSid, to, permitirFallback = true) {
+async function verificarEntrega(messageSid, to, mediaUrl, permitirRepoFallback) {
   if (!messageSid) return;
 
-  const pausas = [1500, 3500, 7000];
-
-  for (const pausa of pausas) {
+  for (const pausa of [1500, 3500, 7000]) {
     await esperar(pausa);
 
     try {
       const actual = await client.messages(messageSid).fetch();
+
       lastDelivery = {
+        strategy: "media_url",
         messageSid,
+        mediaUrl,
         status: actual?.status || null,
         errorCode: actual?.errorCode || null,
         errorMessage: actual?.errorMessage || null,
@@ -224,18 +110,25 @@ async function verificarEntrega(messageSid, to, permitirFallback = true) {
         actual?.errorMessage ? `error=${actual.errorMessage}` : ""
       );
 
-      if (["delivered", "read"].includes(String(actual?.status || ""))) {
-        return;
-      }
+      const estado = String(actual?.status || "");
+      if (["delivered", "read"].includes(estado)) return;
 
-      if (["failed", "undelivered"].includes(String(actual?.status || ""))) {
-        if (permitirFallback) {
+      if (["failed", "undelivered"].includes(estado)) {
+        if (permitirRepoFallback && mediaUrl !== FACHADA_REPO_URL) {
           try {
-            const fallback = await enviarMediaUrlFallback(to);
-            void verificarEntrega(fallback?.sid, to, false);
+            console.warn(
+              "🛟 MediaUrl principal falló; reintentando fachada desde GitHub RAW"
+            );
+            const fallback = await crearMensajeMedia(to, FACHADA_REPO_URL);
+            void verificarEntrega(
+              fallback?.sid,
+              to,
+              FACHADA_REPO_URL,
+              false
+            );
           } catch (fallbackError) {
             console.error(
-              "❌ También falló el MediaUrl de respaldo:",
+              "❌ También falló el envío de fachada desde GitHub RAW:",
               fallbackError.message
             );
           }
@@ -249,57 +142,44 @@ async function verificarEntrega(messageSid, to, permitirFallback = true) {
   }
 }
 
-async function sendFacadeViaContent(to) {
+async function sendFacadeMedia(to) {
   if (!configurado()) {
     throw new Error("Twilio no está configurado completamente");
   }
 
-  const sid = await obtenerContentSid();
+  let message;
+  try {
+    message = await crearMensajeMedia(to, FACHADA_RENDER_URL);
+  } catch (error) {
+    console.error(
+      "⚠️ No se pudo crear mensaje con MediaUrl de Render; probando GitHub RAW:",
+      error.message
+    );
+    message = await crearMensajeMedia(to, FACHADA_REPO_URL);
+    void verificarEntrega(message?.sid, to, FACHADA_REPO_URL, false);
+    return message;
+  }
 
-  const message = await client.messages.create({
-    ...senderParams(),
-    to: normalizarDestino(to),
-    contentSid: sid,
-  });
-
-  lastDelivery = {
-    messageSid: message?.sid || null,
-    status: message?.status || null,
-    errorCode: message?.errorCode || null,
-    errorMessage: message?.errorMessage || null,
-    checkedAt: new Date().toISOString(),
-  };
-
-  console.log(
-    "🏢 Fachada enviada con Twilio Content Media:",
-    normalizarDestino(to),
-    message?.sid || "sin SID",
-    `status=${message?.status || "unknown"}`,
-    `contentSid=${sid}`
-  );
-
-  // Twilio devuelve normalmente "queued" al crear el mensaje. Consultamos el
-  // estado real en segundo plano para detectar failed/undelivered y mostrar el
-  // error concreto en Render sin frenar el flujo del bot.
-  void verificarEntrega(message?.sid, to, true);
-
+  void verificarEntrega(message?.sid, to, FACHADA_RENDER_URL, true);
   return message;
 }
 
 function getFacadeStatus() {
   return {
     configured: configurado(),
-    templateName: FRIENDLY_NAME,
-    contentSidCached: contentSid,
-    templateNormalized,
-    mediaUrl: FACHADA_REPO_URL,
-    fallbackMediaUrl: FACHADA_RENDER_URL || FACHADA_REPO_URL,
+    strategy: "media_url_session_message",
+    templateUsed: false,
+    mediaUrl: FACHADA_RENDER_URL,
+    fallbackMediaUrl: FACHADA_REPO_URL,
     lastDelivery,
   };
 }
 
 module.exports = {
-  sendFacadeViaContent,
+  sendFacadeMedia,
+  // Alias temporal para no romper el hook existente mientras se despliega.
+  sendFacadeViaContent: sendFacadeMedia,
   getFacadeStatus,
+  FACHADA_RENDER_URL,
   FACHADA_REPO_URL,
 };
