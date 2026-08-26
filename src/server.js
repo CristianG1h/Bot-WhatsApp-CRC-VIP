@@ -33,6 +33,11 @@ const PREVIEW_DESCRIPTION =
 const PREVIEW_URL =
   process.env.PUBLIC_URL || "https://bot-whatsapp-crc-vip.onrender.com/";
 const PREVIEW_IMAGE = "https://vip-mediconecta.app/tenant-logo.png";
+const BASE_PUBLIC_URL = String(
+  process.env.PUBLIC_URL || "https://bot-whatsapp-crc-vip.onrender.com"
+).replace(/\/$/, "");
+const SEDE_IMAGE_URL = `${BASE_PUBLIC_URL}/media/fachada.jpg`;
+const SEDE_PAGE_URL = `${BASE_PUBLIC_URL}/sede-crc`;
 
 function isPreviewBot(req) {
   const ua = String(req.headers["user-agent"] || "").toLowerCase();
@@ -114,13 +119,47 @@ function protegerDashboard(req, res, next) {
   return next();
 }
 
-// Endpoint específico para Twilio. Devuelve un nombre corto y encabezados
-// explícitos para que sus peticiones GET/HEAD validen el medio como JPEG.
+// Endpoint específico para Twilio/WhatsApp. Devuelve un nombre corto y
+// encabezados explícitos para que cualquier crawler pueda leer el JPEG.
 app.get("/media/fachada.jpg", (req, res) => {
   res.setHeader("Content-Type", "image/jpeg");
   res.setHeader("Content-Disposition", 'inline; filename="fachada.jpg"');
   res.setHeader("Cache-Control", "public, max-age=86400");
   return res.sendFile(path.join(mediaPath, "fachada-crc-vip.jpg"));
+});
+
+// Página pública usada para la vista previa automática de enlaces en WhatsApp.
+// Evita enviar la foto como adjunto, que este sender está rechazando con 63021.
+app.get("/sede-crc", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  return res.status(200).type("html").send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIP CRC Galerías - Guía de ubicación</title>
+  <meta name="description" content="Referencia visual para ubicar VIP CRC Galerías, Cra. 28A #51-70, Bogotá." />
+  <meta property="og:locale" content="es_CO" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="VIP CRC Galerías" />
+  <meta property="og:title" content="VIP CRC Galerías - Guía de ubicación" />
+  <meta property="og:description" content="Cra. 28A #51-70, barrio Galerías, Bogotá. Contamos con parqueadero." />
+  <meta property="og:url" content="${SEDE_PAGE_URL}" />
+  <meta property="og:image" content="${SEDE_IMAGE_URL}" />
+  <meta property="og:image:secure_url" content="${SEDE_IMAGE_URL}" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="520" />
+  <meta property="og:image:height" content="375" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="VIP CRC Galerías - Guía de ubicación" />
+  <meta name="twitter:description" content="Cra. 28A #51-70, barrio Galerías, Bogotá." />
+  <meta name="twitter:image" content="${SEDE_IMAGE_URL}" />
+  <style>
+    body{margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033}.wrap{max-width:820px;margin:0 auto;padding:24px}.card{background:white;border-radius:20px;overflow:hidden;box-shadow:0 16px 50px rgba(0,0,0,.12)}img{display:block;width:100%;height:auto}.content{padding:24px}h1{margin:0 0 12px;font-size:28px}p{margin:8px 0;font-size:17px;line-height:1.5}.strong{font-weight:700}
+  </style>
+</head>
+<body><div class="wrap"><main class="card"><img src="${SEDE_IMAGE_URL}" alt="Fachada VIP CRC Galerías" /><div class="content"><h1>VIP CRC Galerías</h1><p class="strong">Cra. 28A #51-70, barrio Galerías - Bogotá</p><p>Esta fotografía es una referencia visual para reconocer nuestra sede.</p><p>🚗 Contamos con parqueadero.</p></div></main></div></body>
+</html>`);
 });
 
 app.use("/media", express.static(mediaPath, { maxAge: "7d" }));
@@ -170,5 +209,5 @@ app.listen(PORT, () => {
   console.log(
     "🔘 Menús: Twilio Content API (Quick Reply + List Picker) con texto como respaldo"
   );
-  console.log("🖼️ Foto guía: MediaUrl directo (Google CDN + respaldos), sin plantilla");
+  console.log("🖼️ Guía de sede: vista previa de enlace WhatsApp, sin adjunto ni plantilla");
 });
