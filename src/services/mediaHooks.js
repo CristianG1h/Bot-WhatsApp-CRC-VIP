@@ -2,12 +2,13 @@
 
 const whatsappService = require("./whatsapp");
 const twilioService = require("./twilio");
-const { sendFacadeMedia } = require("./twilioFacade");
 const {
   ONAC_CERT_URL,
   captionAcreditacion,
   limpiarMensajeHabilitacionAntiguo,
 } = require("./crcMedia");
+
+const MAPS_URL = "https://share.google/G0KaXb0OWp0MbqYOc";
 
 let instalado = false;
 
@@ -26,6 +27,10 @@ function esPromocionRenovacion(texto) {
 function cuerpoPromocion(texto) {
   return String(texto || "")
     .replace(/\n\n1️⃣ Sí\n2️⃣ No\s*$/, "")
+    .replace(
+      /📍 Estamos ubicados en \*Cra\. 28A #51-70, barrio Galerías – Bogotá\*\./,
+      `📍 *Cómo llegar a VIP CRC Galerías:*\n${MAPS_URL}`
+    )
     .trim();
 }
 
@@ -62,18 +67,9 @@ async function enviarExtrasTwilio(to, textoOriginal) {
   }
 }
 
-async function enviarPromocionConFachadaTwilio(to, texto) {
-  // La conversación está dentro de la ventana de 24 h iniciada por el usuario.
-  // La foto se manda como mensaje multimedia normal (Body + MediaUrl), sin
-  // ContentSid ni plantilla. Los botones sí permanecen en Twilio Content API.
-  try {
-    await sendFacadeMedia(to);
-  } catch (error) {
-    console.error("❌ No fue posible iniciar el envío de la fachada:", error.message);
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
+async function enviarPromocionConMapsTwilio(to, texto) {
+  // La promoción incluye un único enlace directo a Google Maps.
+  // Ya no se envía una foto ni un segundo mensaje repitiendo la ubicación.
   const body = cuerpoPromocion(texto);
 
   try {
@@ -86,7 +82,10 @@ async function enviarPromocionConFachadaTwilio(to, texto) {
       "⚠️ Quick Reply de promoción falló; se usa texto normal:",
       error.message
     );
-    return twilioService.sendTwilioTextPlain(to, texto);
+    return twilioService.sendTwilioTextPlain(
+      to,
+      `${body}\n\n1️⃣ Agendar\n2️⃣ No`
+    );
   }
 }
 
@@ -111,7 +110,7 @@ function instalarMediaHooks() {
     let result;
 
     if (esPromocionRenovacion(limpio)) {
-      result = await enviarPromocionConFachadaTwilio(to, limpio);
+      result = await enviarPromocionConMapsTwilio(to, limpio);
     } else {
       result = await originalTwilio(to, limpio);
     }
