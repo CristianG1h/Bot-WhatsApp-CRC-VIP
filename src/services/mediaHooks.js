@@ -2,7 +2,7 @@
 
 const whatsappService = require("./whatsapp");
 const twilioService = require("./twilio");
-const { sendFacadeViaContent } = require("./twilioFacade");
+const { sendFacadeMedia } = require("./twilioFacade");
 const {
   ONAC_CERT_URL,
   captionAcreditacion,
@@ -63,16 +63,15 @@ async function enviarExtrasTwilio(to, textoOriginal) {
 }
 
 async function enviarPromocionConFachadaTwilio(to, texto) {
-  // La promoción se maneja aquí de forma especial para evitar el intento
-  // antiguo de MediaUrl que todavía existe como compatibilidad en twilio.js.
-  // Así se genera UN solo mensaje de foto y luego el Quick Reply Agendar/No.
+  // La conversación está dentro de la ventana de 24 h iniciada por el usuario.
+  // La foto se manda como mensaje multimedia normal (Body + MediaUrl), sin
+  // ContentSid ni plantilla. Los botones sí permanecen en Twilio Content API.
   try {
-    await sendFacadeViaContent(to);
+    await sendFacadeMedia(to);
   } catch (error) {
     console.error("❌ No fue posible iniciar el envío de la fachada:", error.message);
   }
 
-  // Pequeño margen para conservar el orden visual: foto -> promoción/botones.
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   const body = cuerpoPromocion(texto);
@@ -112,10 +111,6 @@ function instalarMediaHooks() {
     let result;
 
     if (esPromocionRenovacion(limpio)) {
-      // CRC está conectado por Twilio. Para este punto concreto no usamos el
-      // detector legacy de twilio.js porque disparaba además un MediaUrl
-      // duplicado. La foto se envía con la plantilla Media corregida y los
-      // botones por Quick Reply, ambos directamente desde Twilio.
       result = await enviarPromocionConFachadaTwilio(to, limpio);
     } else {
       result = await originalTwilio(to, limpio);
