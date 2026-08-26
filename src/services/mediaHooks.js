@@ -23,6 +23,12 @@ function esPromocionRenovacion(texto) {
   );
 }
 
+function cuerpoPromocion(texto) {
+  return String(texto || "")
+    .replace(/\n\n1️⃣ Sí\n2️⃣ No\s*$/, "")
+    .trim();
+}
+
 async function enviarExtrasMeta(to, textoOriginal) {
   if (!esConfirmacionFinal(textoOriginal)) return;
 
@@ -56,18 +62,32 @@ async function enviarExtrasTwilio(to, textoOriginal) {
   }
 }
 
-async function enviarFachadaTwilio(to, textoOriginal) {
-  if (!esPromocionRenovacion(textoOriginal)) return;
-
+async function enviarPromocionConFachadaTwilio(to, texto) {
+  // La promoción se maneja aquí de forma especial para evitar el intento
+  // antiguo de MediaUrl que todavía existe como compatibilidad en twilio.js.
+  // Así se genera UN solo mensaje de foto y luego el Quick Reply Agendar/No.
   try {
-    // Los Quick Replies ya demostraron que Twilio Content API está llegando
-    // correctamente a este sender. Usamos esa misma ruta para la fotografía,
-    // con un content type twilio/media y el JPG versionado en el repositorio.
     await sendFacadeViaContent(to);
   } catch (error) {
-    // twilioFacade ya hace un intento de respaldo con MediaUrl. Si ambos
-    // fallan, dejamos el error explícito pero NO interrumpimos el agendamiento.
-    console.error("❌ No fue posible entregar la foto de la sede:", error.message);
+    console.error("❌ No fue posible iniciar el envío de la fachada:", error.message);
+  }
+
+  // Pequeño margen para conservar el orden visual: foto -> promoción/botones.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  const body = cuerpoPromocion(texto);
+
+  try {
+    return await twilioService.sendTwilioQuickReply(to, body, [
+      { id: "1", title: "Agendar" },
+      { id: "2", title: "No" },
+    ]);
+  } catch (error) {
+    console.error(
+      "⚠️ Quick Reply de promoción falló; se usa texto normal:",
+      error.message
+    );
+    return twilioService.sendTwilioTextPlain(to, texto);
   }
 }
 
@@ -89,12 +109,18 @@ function instalarMediaHooks() {
     const original = String(body || "");
     const limpio = limpiarMensajeHabilitacionAntiguo(original);
 
-    // CRC trabaja por Twilio. originalTwilio detecta menús y usa Twilio
-    // Content API para Quick Reply/List Picker. Después de la promoción se
-    // fuerza además el envío de la fachada por twilio/media, que es el mismo
-    // canal rico que ya está funcionando para los botones.
-    const result = await originalTwilio(to, limpio);
-    await enviarFachadaTwilio(to, original);
+    let result;
+
+    if (esPromocionRenovacion(limpio)) {
+      // CRC está conectado por Twilio. Para este punto concreto no usamos el
+      // detector legacy de twilio.js porque disparaba además un MediaUrl
+      // duplicado. La foto se envía con la plantilla Media corregida y los
+      // botones por Quick Reply, ambos directamente desde Twilio.
+      result = await enviarPromocionConFachadaTwilio(to, limpio);
+    } else {
+      result = await originalTwilio(to, limpio);
+    }
+
     await enviarExtrasTwilio(to, original);
     return result;
   };
