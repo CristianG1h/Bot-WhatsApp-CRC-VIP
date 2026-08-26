@@ -114,6 +114,15 @@ function protegerDashboard(req, res, next) {
   return next();
 }
 
+// Endpoint específico para Twilio. Devuelve un nombre corto y encabezados
+// explícitos para que sus peticiones GET/HEAD validen el medio como JPEG.
+app.get("/media/fachada.jpg", (req, res) => {
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Content-Disposition", 'inline; filename="fachada.jpg"');
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.sendFile(path.join(mediaPath, "fachada-crc-vip.jpg"));
+});
+
 app.use("/media", express.static(mediaPath, { maxAge: "7d" }));
 app.use("/public", protegerDashboard, express.static(publicPath));
 
@@ -161,5 +170,5 @@ app.listen(PORT, () => {
   console.log(
     "🔘 Menús: Twilio Content API (Quick Reply + List Picker) con texto como respaldo"
   );
-  console.log("🖼️ Foto guía: archivo JPG público del repositorio enviado por Twilio");
+  console.log("🖼️ Foto guía: MediaUrl directo (Google CDN + respaldos), sin plantilla");
 });
