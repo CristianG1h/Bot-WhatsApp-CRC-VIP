@@ -6,7 +6,7 @@
 const FACHADA_URL =
   "https://raw.githubusercontent.com/CristianG1h/Bot-WhatsApp-CRC-VIP/main/src/assets/fachada-crc-vip.jpg";
 
-const ONAC_CERT_URL = "https://onac.org.co/certificados/22-CEP-076.pdf";
+const ONAC_CERT_URL = "https://onac.org.co/directorio3/index.php/acreditaciones/pdf/22-CEP-076";
 const ONAC_DIRECTORY_URL =
   "https://onac.org.co/directorio3/index.php/acreditaciones/22-CEP-076";
 
@@ -25,24 +25,8 @@ function normalizarTexto(valor) {
 
 function esConsultaHabilitacion(texto) {
   const t = normalizarTexto(texto);
-  if (!t) return false;
-
-  if (
-    /\b(habilitacion|habilitado|habilitada|habilitados|habilitadas|acreditacion|acreditado|acreditada|acreditados|acreditadas|onac)\b/.test(
-      t
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    /\b(certificado|documento|soporte|aval|autorizacion|resolucion)\b/.test(t) &&
-    /\b(crc|centro|ustedes|vip|licencia|conductor|conductores)\b/.test(t)
-  ) {
-    return true;
-  }
-
-  return false;
+  return /\b(onac|acreditacion|acreditado|acreditada|habilitacion|habilitado|habilitada)\b/.test(t) ||
+    (/\b(aval|autorizacion|certificado)\b/.test(t) && /\b(del centro|del crc|de ustedes|de la sede)\b/.test(t));
 }
 
 function captionFotoSede() {
@@ -57,7 +41,7 @@ Cra. 28A #51-70, barrio Galerías – Bogotá.
 function captionAcreditacion() {
   return `📄 *Acreditación oficial del CRC*
 
-Para que puedas validar el respaldo de nuestro centro, te compartimos el certificado de acreditación ONAC *22-CEP-076* de *VIP SALUD OCUPACIONAL SAS*, renovada en 2026.
+Para que puedas validar el respaldo de nuestro centro, te compartimos el certificado de acreditación ONAC *22-CEP-076* de *VIP SALUD OCUPACIONAL SAS*.
 
 🔎 También puedes verificarla directamente en el Directorio Oficial de Acreditados de ONAC:
 ${ONAC_DIRECTORY_URL}`;

@@ -1203,3 +1203,10 @@ tbody tr:hover td {
   color: var(--muted);
   font-size: 11px;
 }
+/* Long log entries stay readable; preserve keyboard and reduced-motion access. */
+td { overflow-wrap: anywhere; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#statsStatus { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -13,7 +13,7 @@
   <!-- Open Graph / WhatsApp / Facebook -->
   <meta property="og:locale" content="es_CO" />
   <meta property="og:title" content="Bot CRC VIP" />
-  <meta property="og:description" content="Dashboard y estadísticas del bot CRC VIP. Consulta actividad, RUNT, SIMIT, citas y seguimiento en tiempo real." />
+  <meta property="og:description" content="Dashboard y estadísticas del bot CRC VIP. Consulta actividad, citas y seguimiento en tiempo real." />
   <meta property="og:image" content="https://vip-mediconecta.app/tenant-logo.png" />
   <meta property="og:image:secure_url" content="https://vip-mediconecta.app/tenant-logo.png" />
   <meta property="og:image:type" content="image/png" />
@@ -30,7 +30,7 @@
 
   <!-- Estilos -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
   <link rel="stylesheet" href="/public/css/dashboard.css" />
 </head>
 
@@ -53,7 +53,7 @@
 
         <div class="badge-live">
           <span class="dot"></span>
-          En vivo
+          <span id="liveLabel">Cargando</span>
         </div>
 
         <button class="btn" onclick="toggleTheme()" id="themeBtn">
@@ -69,8 +69,8 @@
     <section class="filter-card">
       <div class="filter-grid">
         <div class="field">
-          <label>Buscar por número, palabra o evento</label>
-          <input id="qInput" class="input" placeholder="Ej: 573212340504, runt, simit, cita, asesor..." />
+          <label for="qInput">Buscar por número, palabra o evento</label>
+          <input id="qInput" class="input" placeholder="Ej: cita, asesor, error..." />
         </div>
 
         <div class="field">
@@ -114,12 +114,12 @@
         </div>
 
         <div class="field custom-field hidden">
-          <label>Desde</label>
+          <label for="fromInput">Desde</label>
           <input id="fromInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
         </div>
 
         <div class="field custom-field hidden">
-          <label>Hasta</label>
+          <label for="toInput">Hasta</label>
           <input id="toInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
         </div>
 
@@ -133,6 +133,7 @@
       </div>
     </section>
 
+    <p id="statsStatus" role="status" aria-live="polite">Cargando estadísticas…</p>
     <div class="section-label">Métricas generales</div>
 
     <section class="metrics-grid">
@@ -140,8 +141,8 @@
         <div class="metric-top">
           <div>
             <div class="metric-val" id="m-conv">0</div>
-            <div class="metric-label">Conversaciones</div>
-            <div class="metric-foot">Usuarios únicos filtrados</div>
+            <div class="metric-label">Contactos únicos</div>
+            <div class="metric-foot">Contactos con mensajes en el período</div>
           </div>
           <div class="metric-icon"><i class="ti ti-message-circle"></i></div>
         </div>
@@ -173,8 +174,8 @@
         <div class="metric-top">
           <div>
             <div class="metric-val" id="m-acc">0</div>
-            <div class="metric-label">Consultas RUNT</div>
-            <div class="metric-foot">Validaciones de licencia</div>
+            <div class="metric-label">Solicitudes de cita</div>
+            <div class="metric-foot">Solicitudes enviadas al centro</div>
           </div>
           <div class="metric-icon icon-yellow"><i class="ti ti-key"></i></div>
         </div>
@@ -184,8 +185,8 @@
         <div class="metric-top">
           <div>
             <div class="metric-val" id="m-cert">0</div>
-            <div class="metric-label">Consultas SIMIT</div>
-            <div class="metric-foot">Consultas comparendos</div>
+            <div class="metric-label">Atención humana</div>
+            <div class="metric-foot">Solicitudes para un asesor</div>
           </div>
           <div class="metric-icon icon-purple"><i class="ti ti-award"></i></div>
         </div>
@@ -212,7 +213,7 @@
           </div>
 
           <div class="chart-controls">
-            <button type="button" class="chart-nav-btn" onclick="moveChartRange(-1)">
+            <button type="button" class="chart-nav-btn" aria-label="Período anterior" onclick="moveChartRange(-1)">
               <i class="ti ti-chevron-left"></i>
             </button>
 
@@ -224,7 +225,7 @@
               <option value="custom">Personalizado</option>
             </select>
 
-            <button type="button" class="chart-nav-btn" onclick="moveChartRange(1)">
+            <button type="button" class="chart-nav-btn" aria-label="Período siguiente" onclick="moveChartRange(1)">
               <i class="ti ti-chevron-right"></i>
             </button>
           </div>
@@ -282,8 +283,8 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
   <script src="/public/js/dashboard.js"></script>
 </body>
 </html>

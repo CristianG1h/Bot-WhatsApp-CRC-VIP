@@ -1,17 +1,20 @@
 {
   "name": "bot-whatsapp-crc-vip",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node scripts/check-syntax.js",
+    "doctor": "node scripts/check-config.js"
   },
   "dependencies": {
-    "axios": "^1.7.9",
-    "express": "^5.0.0",
-    "nodemailer": "^8.0.7",
-    "pg": "^8.21.0",
-    "playwright": "^1.45.0",
-    "tesseract.js": "^5.1.1",
-    "twilio": "^5.4.0"
+    "axios": "^1.20.0",
+    "express": "^5.2.1",
+    "pg": "^8.23.0",
+    "twilio": "^5.13.1"
+  },
+  "engines": {
+    "node": ">=22 <25"
   }
 }

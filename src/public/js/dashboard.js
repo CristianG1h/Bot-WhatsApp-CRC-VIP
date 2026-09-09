@@ -1,3 +1,9 @@
+    let statsRequest = null;
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[c]);
+    }
     let isLight = false;
     let lineChart = null;
     let donutChart = null;
@@ -143,6 +149,7 @@
   return params.toString();
 }
     function renderCharts(data) {
+      if (typeof Chart !== "function") return;
       const textColor = isLight ? "#64748b" : "#9db7d8";
       const gridColor = isLight ? "rgba(15,23,42,.08)" : "rgba(148,163,184,.09)";
 
@@ -190,8 +197,6 @@
       // Dona: solo acciones/palabras clave. No incluye "mensajes recibidos".
       const donutData = [
         { label: "Hola / Menú", val: kws.menu || kws.hola || 0, color: "#3b82f6" },
-        { label: "RUNT", val: totals.runtConsultas || kws.runt || 0, color: "#10b981" },
-        { label: "SIMIT", val: totals.simitConsultas || kws.simit || 0, color: "#22c55e" },
         { label: "Citas", val: totals.citasPreconfirmadas || kws.cita || 0, color: "#a78bfa" },
         { label: "Asesor", val: totals.asesoresActivados || kws.asesor || 0, color: "#fb923c" },
         { label: "No reconocido", val: totals.mensajesNoReconocidos || 0, color: "#f87171" }
@@ -277,10 +282,10 @@
   return `
     <tr>
       <td style="color:var(--muted);white-space:nowrap">
-        <div class="log-date">${fecha}</div>
-        <div class="log-time">${hora}</div>
+        <div class="log-date">${escapeHtml(fecha)}</div>
+        <div class="log-time">${escapeHtml(hora)}</div>
       </td>
-      <td>${i.detalle || "—"}</td>
+      <td>${escapeHtml(i.detalle || "—")}</td>
       <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
     </tr>
   `;
@@ -289,18 +294,18 @@
 
     function renderKeywords(keywords) {
       const entries = Object.entries(keywords || {})
-        .filter(([, v]) => Number(v || 0) >= 0)
+        .filter(([, v]) => Number(v || 0) > 0)
         .sort((a, b) => Number(b[1]) - Number(a[1]));
 
       const max = entries[0]?.[1] || 1;
 
       document.getElementById("kwBars").innerHTML = entries.map(([key, val], index) => `
         <div class="kw-row">
-          <div class="kw-label">${key}</div>
+          <div class="kw-label">${escapeHtml(key)}</div>
           <div class="kw-track">
             <div class="kw-fill" style="width:${Math.round((val / max) * 100)}%;background:${kwColors[index % kwColors.length]}"></div>
           </div>
-          <div class="kw-count">${val}</div>
+          <div class="kw-count">${formatNumber(val)}</div>
         </div>
       `).join("");
     }
@@ -353,26 +358,43 @@ function moveChartRange(direction) {
 
     async function loadStats() {
       try {
+        if (statsRequest) statsRequest.abort();
         const query = buildQueryParams();
+        const p = new URLSearchParams(query);
+        const incomplete = p.get("range") === "custom" && (!p.get("from") || !p.get("to")) ||
+          p.get("chartRange") === "custom" && (!p.get("chartFrom") || !p.get("chartTo"));
+        if (incomplete) {
+          document.getElementById("statsStatus").textContent = "Selecciona las dos fechas para aplicar el filtro.";
+          return;
+        }
+        if (statsRequest) statsRequest.abort();
+        const controller = new AbortController();
+        statsRequest = controller;
         const url = query ? `/api/stats?${query}` : "/api/stats";
 
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetch(url, { cache: "no-store", signal: controller.signal });
 
+        if (controller !== statsRequest) return;
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
 
         const data = await res.json();
+        if (controller !== statsRequest) return;
 
+        document.getElementById("statsStatus").textContent = data.degraded
+          ? "Base de datos no disponible: mostrando actividad conservada en memoria."
+          : data.retention?.truncated ? "Mostrando los últimos 50.000 eventos conservados en memoria." : "Datos actualizados.";
+        document.getElementById("liveLabel").textContent = data.degraded ? "Datos parciales" : "Actualizado";
         window.lastData = data;
         updateActivityTitle(data);
 
         document.getElementById("m-conv").textContent = formatNumber(data.totales.conversaciones);
         document.getElementById("m-rec").textContent = formatNumber(data.totales.mensajesRecibidos);
         document.getElementById("m-msg").textContent = formatNumber(data.totales.mensajesEnviados);
-        document.getElementById("m-acc").textContent = formatNumber(data.totales.runtConsultas);
-        document.getElementById("m-cert").textContent = formatNumber(data.totales.simitConsultas);
-        document.getElementById("m-norec").textContent = formatNumber(data.totales.noReconocidos);
+        document.getElementById("m-acc").textContent = formatNumber(data.totales.citasPreconfirmadas);
+        document.getElementById("m-cert").textContent = formatNumber(data.totales.asesoresActivados);
+        document.getElementById("m-norec").textContent = formatNumber(data.totales.mensajesNoReconocidos);
 
         document.getElementById("uptimeVal").textContent = formatUptime(data.uptime);
         document.getElementById("iniciadoEn").textContent = new Date(data.iniciadoEn).toLocaleString("es-CO");
@@ -383,6 +405,9 @@ function moveChartRange(direction) {
         renderLogs(data.ultimasInteracciones);
         renderKeywords(data.keywords);
       } catch (error) {
+        if (error.name === "AbortError") return;
+        document.getElementById("statsStatus").textContent = "No se pudieron cargar los datos. Revisa las fechas o vuelve a intentar.";
+        document.getElementById("liveLabel").textContent = "Sin actualizar";
         console.error("Error cargando estadísticas:", error);
       }
     }
@@ -483,6 +508,7 @@ document.getElementById("toInput").addEventListener("change", () => {
       debounceTimer = setTimeout(loadStats, 500);
     });
 
+    if (typeof flatpickr === "function") {
     flatpickr("#fromInput", {
   locale: "es",
   dateFormat: "Y-m-d",
@@ -523,6 +549,14 @@ flatpickr("#chartToInput", {
   onChange: loadStats,
 });
 
+    } else {
+      ["fromInput", "toInput", "chartFromInput", "chartToInput"].forEach((id) => {
+        const el = document.getElementById(id);
+        el.type = "date";
+        el.removeAttribute("readonly");
+        el.addEventListener("change", loadStats);
+      });
+    }
     initRangeDropdown();
 toggleCustomFields();
 loadStats();

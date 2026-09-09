@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const { splitMessage } = require("../utils/messages");
 const { WHATSAPP_TOKEN, PHONE_NUMBER_ID } = require("../config");
 
 const FACHADA_LOCAL_PATH = path.join(
@@ -29,23 +30,19 @@ function whatsappConfigurado() {
 }
 
 function getMessagesUrl() {
-  return `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`;
+  return `https://graph.facebook.com/${process.env.META_API_VERSION || "v23.0"}/${PHONE_NUMBER_ID}/messages`;
 }
 
 function getMediaUrl() {
-  return `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/media`;
+  return `https://graph.facebook.com/${process.env.META_API_VERSION || "v23.0"}/${PHONE_NUMBER_ID}/media`;
 }
 
 async function enviarPayload(payload) {
-  if (!whatsappConfigurado()) {
-    console.log(
-      "⚠️ WhatsApp no configurado. Payload omitido:",
-      payload?.type || "unknown"
-    );
-    return null;
-  }
+  if (!whatsappConfigurado()) throw new Error("WhatsApp Cloud API no está configurada");
+
 
   const response = await axios.post(getMessagesUrl(), payload, {
+    timeout: 12000,
     headers: {
       Authorization: `Bearer ${WHATSAPP_TOKEN}`,
       "Content-Type": "application/json",
@@ -71,6 +68,7 @@ async function uploadMediaFile(filePath, mimeType = "application/octet-stream") 
 
   const response = await fetch(getMediaUrl(), {
     method: "POST",
+    signal: AbortSignal.timeout(12000),
     headers: {
       Authorization: `Bearer ${WHATSAPP_TOKEN}`,
     },
@@ -130,6 +128,7 @@ async function sendReplyButtons(to, body, buttons, options = {}) {
     .filter((button) => button.reply.id && button.reply.title);
 
   if (!texto || !validos.length) return null;
+  if (texto.length > 1024) throw new Error("Usar texto para conservar todo el contenido");
 
   const interactive = {
     type: "button",
@@ -200,6 +199,7 @@ async function sendList(to, body, buttonText, rows, options = {}) {
     .filter((row) => row.id && row.title);
 
   if (!texto || !filas.length) return null;
+  if (texto.length > 1024) throw new Error("Usar texto para conservar todo el contenido");
 
   const interactive = {
     type: "list",
@@ -250,7 +250,7 @@ async function intentarMensajeInteractivo(to, mensaje) {
   }
 
   if (
-    mensaje.includes("Renovación o refrendación: $180.000") &&
+    mensaje.includes("examen CRC para renovación/refrendación") &&
     mensaje.includes("¿Deseas agendar tu cita?")
   ) {
     const body = quitarBloque(mensaje, /\n\n1️⃣ Sí\n2️⃣ No\s*$/);
@@ -263,7 +263,7 @@ async function intentarMensajeInteractivo(to, mensaje) {
       ],
       {
         footer: "Selecciona una opción",
-        headerImage: "fachada",
+
       }
     );
   }
@@ -386,12 +386,12 @@ async function sendTextPlain(to, body) {
   const mensaje = String(body || "").trim();
   if (!mensaje) return null;
 
-  return enviarPayload({
-    messaging_product: "whatsapp",
-    to: normalizarDestino(to),
-    type: "text",
-    text: { body: mensaje },
-  });
+  let result;
+  for (const part of splitMessage(mensaje)) {
+    result = await enviarPayload({ messaging_product: "whatsapp", to: normalizarDestino(to),
+      type: "text", text: { body: part } });
+  }
+  return result;
 }
 
 async function sendText(to, body) {

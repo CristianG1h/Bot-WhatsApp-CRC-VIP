@@ -1,6 +1,7 @@
 "use strict";
 
 const twilio = require("twilio");
+const { splitMessage } = require("../utils/messages");
 
 const accountSid = String(process.env.TWILIO_ACCOUNT_SID || "").trim();
 const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
@@ -9,7 +10,7 @@ const messagingServiceSid = String(
   process.env.TWILIO_MESSAGING_SERVICE_SID || ""
 ).trim();
 
-const client = twilio(accountSid || undefined, authToken || undefined);
+const client = twilio(accountSid || undefined, authToken || undefined, { timeout: 12000, autoRetry: false });
 
 const FACHADA_REPO_URL =
   "https://raw.githubusercontent.com/CristianG1h/Bot-WhatsApp-CRC-VIP/main/src/assets/fachada-crc-vip.jpg";
@@ -17,7 +18,6 @@ const FACHADA_REPO_URL =
 const CONTENT_BASE_URL = "https://content.twilio.com/v1/Content";
 const contentSidCache = new Map();
 const contentCreationPromises = new Map();
-const fachadaEnviadaAt = new Map();
 let contentIndexPromise = null;
 
 function normalizarDestino(to) {
@@ -59,6 +59,7 @@ async function contentRequest(url, options = {}) {
   }
 
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(8000),
     method: options.method || "GET",
     headers: {
       Authorization: basicAuthHeader(),
@@ -257,9 +258,10 @@ async function sendTwilioQuickReply(to, body, buttons) {
     }))
     .filter((item) => item.title && item.id);
 
-  const texto = String(body || "").trim().slice(0, 1024);
+  const texto = String(body || "").trim();
+  if (texto.length > 1024) throw new Error("Usar texto para conservar todo el contenido");
   if (!texto || !opciones.length) return null;
-  if (!twilioConfigurado()) return sendTwilioTextPlain(to, texto);
+  if (!twilioConfigurado()) throw new Error("Twilio no está configurado");
 
   const contentSid = await obtenerOCrearQuickReply(opciones.length);
   const variables = { "1": texto };
@@ -278,7 +280,7 @@ async function sendTwilioQuickReply(to, body, buttons) {
 
   console.log(
     "🔘 Quick Reply enviado por Twilio:",
-    normalizarDestino(to),
+    "destino omitido",
     opciones.map((item) => item.title).join(" | "),
     message?.sid || ""
   );
@@ -297,10 +299,11 @@ async function sendTwilioListPicker(to, body, buttonText, rows) {
     }))
     .filter((item) => item.title && item.id);
 
-  const texto = String(body || "").trim().slice(0, 1024);
+  const texto = String(body || "").trim();
+  if (texto.length > 1024) throw new Error("Usar texto para conservar todo el contenido");
   const boton = String(buttonText || "Ver opciones").trim().slice(0, 20);
   if (!texto || !items.length) return null;
-  if (!twilioConfigurado()) return sendTwilioTextPlain(to, texto);
+  if (!twilioConfigurado()) throw new Error("Twilio no está configurado");
 
   const contentSid = await obtenerOCrearListPicker(items.length);
   const variables = {
@@ -323,7 +326,7 @@ async function sendTwilioListPicker(to, body, buttonText, rows) {
 
   console.log(
     "📋 List Picker enviado por Twilio:",
-    normalizarDestino(to),
+    "destino omitido",
     `${items.length} opciones`,
     message?.sid || ""
   );
@@ -335,15 +338,14 @@ async function sendTwilioTextPlain(to, body) {
   if (!mensaje) return null;
 
   if (!twilioConfigurado()) {
-    console.log("⚠️ Twilio no configurado. Mensaje:", mensaje);
-    return null;
+    throw new Error("Twilio no está configurado");
   }
 
-  return client.messages.create({
-    ...senderParams(),
-    to: normalizarDestino(to),
-    body: mensaje,
-  });
+  let result;
+  for (const part of splitMessage(mensaje)) {
+    result = await client.messages.create({ ...senderParams(), to: normalizarDestino(to), body: part });
+  }
+  return result;
 }
 
 async function sendTwilioMedia(to, body, mediaUrl) {
@@ -353,8 +355,7 @@ async function sendTwilioMedia(to, body, mediaUrl) {
   if (!url) return sendTwilioTextPlain(to, mensaje);
 
   if (!twilioConfigurado()) {
-    console.log("⚠️ Twilio no configurado. Adjunto omitido:", url);
-    return null;
+    throw new Error("Twilio no está configurado");
   }
 
   const message = await client.messages.create({
@@ -366,31 +367,13 @@ async function sendTwilioMedia(to, body, mediaUrl) {
 
   console.log(
     "🖼️ Adjunto enviado directamente por Twilio:",
-    normalizarDestino(to),
+    "destino omitido",
     message?.sid || ""
   );
   return message;
 }
 
-async function enviarFachadaSiCorresponde(to) {
-  const key = normalizarDestino(to);
-  const now = Date.now();
-  const last = fachadaEnviadaAt.get(key) || 0;
-  if (now - last < 30 * 60 * 1000) return null;
 
-  try {
-    const result = await sendTwilioMedia(
-      to,
-      "📍 Guía para ubicar nuestra sede\nVIP CRC Galerías — Cra. 28A #51-70, barrio Galerías, Bogotá.\n🚗 Contamos con parqueadero.",
-      FACHADA_REPO_URL
-    );
-    fachadaEnviadaAt.set(key, now);
-    return result;
-  } catch (error) {
-    console.error("⚠️ No se pudo enviar la fachada por Twilio:", error.message);
-    return null;
-  }
-}
 
 function quitarFinal(mensaje, regex) {
   return String(mensaje || "").replace(regex, "").trim();
@@ -430,10 +413,9 @@ async function intentarMensajeInteractivoTwilio(to, mensaje) {
   }
 
   if (
-    text.includes("Renovación o refrendación: $180.000") &&
+    text.includes("examen CRC para renovación/refrendación") &&
     text.includes("¿Deseas agendar tu cita?")
   ) {
-    await enviarFachadaSiCorresponde(to);
     const body = quitarFinal(text, /\n\n1️⃣ Sí\n2️⃣ No\s*$/);
     return sendTwilioQuickReply(to, body, [
       { id: "1", title: "Agendar" },

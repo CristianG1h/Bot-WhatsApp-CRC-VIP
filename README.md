@@ -1,156 +1,81 @@
 # Bot WhatsApp CRC VIP
 
-Bot de atención y agendamiento para **VIP CRC Galerías**, integrado con **WhatsApp mediante Twilio**, Chatwoot, correo de confirmación, IA de respaldo y dashboard de estadísticas.
+Asistente de VIP CRC Galerías para información del examen de aptitud y solicitudes de cita. Canal principal: WhatsApp mediante Twilio; Chatwoot conserva la conversación y recibe los casos que requieren asesor.
 
-## Canal actual
+## Flujo de atención
 
-El número del CRC está conectado a WhatsApp mediante **Twilio**. Por eso los componentes interactivos se generan con **Twilio Content API**:
+1. Saluda y pregunta si el cliente está interesado en renovar. Una consulta concreta recibe respuesta también en el primer mensaje.
+2. Si responde **sí**, informa el precio del examen, comparte ubicación y conserva la pregunta **«¿Deseas agendar tu cita?»**.
+3. Si responde **sí** a agendar, muestra fechas y horarios. Si esa segunda pregunta queda sin respuesta por **3 minutos**, envía una sola invitación con las siguientes fechas y sus horarios de atención. Se puede configurar a 2 minutos.
+4. La respuesta del cliente cancela el temporizador anterior. Si hace una pregunta y el bot vuelve a preguntar por agendamiento, comienza una nueva espera. «No», asesor, detener y las consultas de SIMIT/ocupacionales cancelan el seguimiento. No se repite después de enviar el recordatorio.
+5. Solicita fecha, horario aproximado, nombre, documento, teléfono y correo. Permite corregir un dato conservando los demás.
+6. Envía una **solicitud de cita** mediante el Google Apps Script existente. La confirmación de disponibilidad corresponde al centro: este repositorio no incluye una agenda de cupos.
 
-- `twilio/quick-reply` para menús de hasta 3 opciones.
-- `twilio/list-picker` para horarios y menús con más opciones.
-- `mediaUrl` de Twilio para la foto de la sede y documentos.
+Los exámenes ocupacionales se remiten al comercial **313 401 0901**, [WhatsApp comercial](https://wa.me/573134010901). SIMIT, multas y comparendos reciben una explicación amable del alcance del canal. Las consultas automáticas de RUNT/SIMIT permanecen inactivas.
 
-Chatwoot conserva la conversación y las notas privadas, pero no se usa para construir los botones de WhatsApp.
+Un asesor que contesta en Chatwoot pausa el bot. El cliente puede escribir **menú** para retomarlo; ya no se reactiva por un temporizador de inactividad del asesor.
 
-## Flujo actual
+## Ejecutar y verificar
 
-El primer mensaje que envíe un usuario siempre inicia la misma interacción comercial, sin importar si escribe `Hola`, `Quiero renovar`, una pregunta o cualquier otro texto:
-
-1. Pregunta si está interesado en renovar la licencia con botones **Sí / No**.
-2. Si responde **Sí**, envía la foto guía de la sede por Twilio, muestra la promoción de renovación y ofrece **Agendar / No**.
-3. Si responde **No**, ofrece **Primera vez / Información / Asesor**.
-4. El agendamiento muestra únicamente días disponibles.
-5. Domingos y festivos de Colombia se excluyen automáticamente.
-6. Los sábados usan horario de 7:00 a.m. a 11:30 a.m.; lunes a viernes, de 7:00 a.m. a 3:30 p.m.
-7. Los horarios se muestran mediante un List Picker de Twilio.
-8. Solicita nombre completo, cédula, celular y correo.
-9. Muestra un resumen con botones **Confirmar cita / Corregir datos**.
-10. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
-11. Después de la confirmación final, comparte la acreditación ONAC configurada para el CRC.
-
-La fotografía utilizada está versionada en:
-
-```text
-src/assets/fachada-crc-vip.jpg
-```
-
-y Twilio la descarga desde la versión pública RAW del mismo repositorio.
-
-## IA como fallback
-
-La IA **no reemplaza el flujo principal** y no interviene en el primer mensaje. Solo se utiliza cuando el usuario ya está dentro del flujo y hace una pregunta que no corresponde a una opción o dato esperado.
-
-Ejemplos:
-
-- `¿Puedo pagar con tarjeta?`
-- `¿Cuánto se demora el examen?`
-- `¿Qué categoría necesito?`
-- `¿Tienen parqueadero?`
-
-Después de responder, la IA recuerda al usuario el paso en el que estaba para que pueda continuar con el agendamiento. Si `GROQ_API_KEY` no está configurada o el servicio de IA falla, el flujo normal continúa sin bloquearse.
-
-Las consultas relacionadas con **habilitación, acreditación, ONAC, certificado, aval o autorización del CRC** se atienden con prioridad y comparten el soporte oficial sin perder el paso del agendamiento.
-
-## Estructura principal
-
-```text
-src/
-├── server.js
-├── config.js
-├── assets/
-│   └── fachada-crc-vip.jpg
-├── routes/
-│   ├── aiFallback.js
-│   ├── chatwootContext.js
-│   ├── habilitacionMiddleware.js
-│   ├── health.js
-│   └── whatsapp.js
-├── services/
-│   ├── chatwoot.js
-│   ├── crcMedia.js
-│   ├── email.js
-│   ├── mediaHooks.js
-│   ├── stats.js
-│   ├── twilio.js
-│   └── whatsapp.js
-├── utils/
-│   ├── agenda.js
-│   ├── rateLimit.js
-│   ├── sessions.js
-│   └── validation.js
-└── public/
-    └── dashboard.html
-```
-
-## Endpoints principales
-
-- `GET /health` — estado del servicio, Twilio y notas de Chatwoot.
-- `GET /webhook` — verificación del webhook de Meta si se conserva como compatibilidad.
-- `POST /webhook` — compatibilidad con WhatsApp Cloud API.
-- `POST /webhook/twilio` — entrada directa de Twilio si se configura ese webhook.
-- `POST /webhook/chatwoot` — eventos de Chatwoot; es la ruta habitual cuando Twilio está conectado a Chatwoot.
-- `GET /dashboard` — dashboard protegido.
-- `GET /api/stats` — estadísticas del bot.
-
-## Variables de entorno principales
-
-```text
-PORT
-VERIFY_TOKEN
-
-TWILIO_ACCOUNT_SID
-TWILIO_AUTH_TOKEN
-TWILIO_WHATSAPP_FROM
-TWILIO_MESSAGING_SERVICE_SID   # opcional
-
-GROQ_API_KEY
-GROQ_MODEL
-
-CHATWOOT_BASE_URL
-CHATWOOT_ACCOUNT_ID
-CHATWOOT_INBOX_ID
-CHATWOOT_API_TOKEN
-CHATWOOT_ENABLED
-
-GOOGLE_SCRIPT_EMAIL_URL
-GOOGLE_SCRIPT_EMAIL_KEY
-MAIL_TO_ADMIN
-
-DATABASE_URL
-DASHBOARD_USER
-DASHBOARD_PASS
-PUBLIC_URL
-```
-
-`WHATSAPP_TOKEN` y `PHONE_NUMBER_ID` solo son necesarios si se quiere mantener además una integración directa separada con Meta; **no son necesarios para el flujo normal del CRC por Twilio**.
-
-## Twilio Content API
-
-El bot crea automáticamente y reutiliza plantillas internas con nombres como:
-
-```text
-crc_vip_qr_v2_1
-crc_vip_qr_v2_2
-crc_vip_qr_v2_3
-crc_vip_list_v2_4
-crc_vip_list_v2_7
-```
-
-Estas plantillas son para mensajes dentro de la ventana de atención iniciada por el usuario. Si Twilio no puede crear o enviar un componente interactivo, el bot vuelve automáticamente al texto normal para no bloquear la atención.
-
-## Ejecución
+Usa Node.js 22 o 24 y npm. En local, copia `.env.example` a `.env` y completa tus valores; en alojamiento, usa las variables del servicio. No subas credenciales al repositorio.
 
 ```bash
-npm install
-npm start
+npm ci
+npm run check
+npm test
+node --env-file=.env scripts/check-config.js chatwoot
+node --env-file=.env src/server.js
 ```
 
-## Consideraciones
+Si el entorno ya inyecta las variables, usa `npm start` y `npm run doctor -- chatwoot`. El diagnóstico imprime nombres y estados, nunca valores secretos, y no llama proveedores. Acepta `chatwoot`, `twilio` o `meta` según la entrada utilizada.
 
-- El calendario trabaja con la zona horaria `America/Bogota`.
-- Los festivos colombianos se calculan en código, incluidos los trasladables por Ley Emiliani y los relacionados con Pascua.
-- Las notas privadas de Chatwoot registran las respuestas del bot para conservar trazabilidad.
-- Cuando un asesor responde desde Chatwoot, el bot pausa la automatización temporalmente para evitar respuestas simultáneas.
-- La foto de la sede se envía por **Twilio** y no por Meta Cloud API.
-- Los botones de hasta 3 opciones usan **Quick Reply**; los menús más largos usan **List Picker**.
-- La IA recibe el mensaje sanitizado para omitir correos y secuencias numéricas largas antes de enviarlo al proveedor.
+## Configuración de webhooks
+
+El modo predeterminado es `WEBHOOK_AUTH_MODE=strict`.
+
+| Entrada | Ruta | Configuración necesaria |
+| --- | --- | --- |
+| Chatwoot (habitual con Twilio) | `POST /webhook/chatwoot` | `CHATWOOT_WEBHOOK_TOKEN`, cuenta e inbox correctos. Configura la URL con `?token=TU_TOKEN`; admite también `x-webhook-token` si tu instalación permite ese encabezado. Suscribe `message_created`. |
+| Twilio directo | `POST /webhook/twilio` | `TWILIO_AUTH_TOKEN` y `PUBLIC_URL` iguales a la URL pública utilizada por Twilio para validar `X-Twilio-Signature`. |
+| Meta directo, opcional | `POST /webhook` y `GET /webhook` | `WHATSAPP_APP_SECRET` para firma, `VERIFY_TOKEN` para verificación, token, número y versión de API. |
+
+Chatwoot utiliza Twilio para enviar al cliente. Por tanto, necesita también las credenciales de salida de Twilio. Las notas privadas y los mensajes del propio bot no disparan respuestas. Se filtran cuenta y bandeja antes de procesar.
+
+Configura los secretos de webhook antes de cambiar la versión en producción. Un secreto ausente responde 503 y uno incorrecto, 403. `WEBHOOK_AUTH_MODE=compat` admite temporalmente una entrada sin secreto configurado; cuando existe un secreto, siempre lo valida. Usa `strict` en producción. El modo compatible no se activa automáticamente.
+
+## Respuestas y recordatorio
+
+- `src/services/knowledge.js`: catálogo de respuestas y datos del negocio.
+- `src/services/answers.js`: reglas locales y clasificación opcional con Groq.
+- `src/services/agendaReminders.js`: espera cancelable de 3 minutos (`CRC_AGENDA_REMINDER_MINUTES=2` o `3`; `CRC_AGENDA_REMINDER_ENABLED=false` lo desactiva).
+- `src/utils/agenda.js`: fechas, festivos y franjas en `America/Bogota`. Lunes a viernes 7:00–15:30; sábados 7:00–11:30, según el proyecto existente.
+- [Plantillas y ejemplos](docs/plantillas.md).
+
+La IA identifica únicamente una intención del catálogo con confianza mínima de 0,85. La respuesta final sale del catálogo: no se usa texto libre generado para precios, pagos, resultados ni promesas. Antes de consultar Groq se omiten correos, enlaces y secuencias numéricas largas. Los datos esperados del formulario se procesan localmente. La sanitización no equivale a una anonimización perfecta de cualquier frase libre.
+
+Twilio utiliza Quick Reply y List Picker dentro de la conversación. Si falla un componente interactivo, intenta enviar el contenido completo como texto, dividido si es necesario. Estas plantillas internas no son campañas ni equivalen a plantillas de marketing aprobadas por Meta.
+
+## Integraciones existentes
+
+**Correo:** el Apps Script, que no está incluido en este repositorio, debe aceptar un POST JSON con `apiKey`, `adminEmail` y `datos`. Estos últimos incluyen `nombre`, `cedula`, `telefono`, `correo`, `tramite`, `dia`, `horario`, `fechaISO` y `solicitudId`. Debe responder JSON `{"ok":true}` al aceptar el envío. Tiene 20 segundos de espera. La referencia permite al equipo revisar un envío dudoso; la idempotencia persistente debe implementarse también en el Apps Script si se necesita. Ante fallo o respuesta ambigua se deriva el caso al asesor.
+
+**Estadísticas:** con `DATABASE_URL` se conservan en PostgreSQL; sin ella funcionan en memoria y se reinician con el proceso. La validación del certificado TLS remoto queda activada por defecto; utiliza la configuración SSL del proveedor. `PG_SSL_REJECT_UNAUTHORIZED=false` conserva compatibilidad únicamente si tu instalación requiere expresamente omitir esa comprobación. Los parámetros SSL incluidos en la propia URL son interpretados por `pg`; evita configuraciones contradictorias.
+
+**Sesiones y recordatorios:** siguen en memoria, incluso si las estadísticas usan PostgreSQL. Requieren una sola instancia activa y un servicio que no se suspenda. Un reinicio pierde los formularios, pausas y temporizadores pendientes. Para varios procesos o recuperación tras reinicios hace falta un almacén compartido y una cola persistente. El recordatorio no se recupera ni se envía horas después de un reinicio.
+
+## Panel y rutas
+
+| Ruta | Uso |
+| --- | --- |
+| `GET /health` | Proceso y presencia de configuración; no comprueba conectividad real de proveedores. |
+| `GET /`, `GET /dashboard` | Panel con usuario y contraseña `DASHBOARD_USER` / `DASHBOARD_PASS`. |
+| `GET /api/stats` | Métricas y filtros, con la misma autenticación. |
+| `GET /sede-crc`, `GET /media/fachada.jpg` | Referencia visual pública de la sede. |
+
+El panel diferencia mensajes, solicitudes de cita, derivaciones al asesor y entradas no comprendidas. Escapa el texto de las interacciones, valida rangos de fechas y muestra los fallos de carga. Si falla PostgreSQL muestra los eventos conservados en memoria como datos parciales.
+
+## Validación antes de producción
+
+Las pruebas automatizadas no envían WhatsApp, correos ni notas a clientes. Sustituyen los proveedores para verificar el comportamiento y sus fallos. [Auditoría, cambios y alcance de las pruebas](docs/auditoria-2026-09-08.md).
+
+Después de configurar un entorno de pruebas, comprueba con un número controlado: una conversación real, botones, recordatorio de 3 minutos, cancelación al responder, pausa del asesor, una solicitud por correo y persistencia de estadísticas. Verifica también precios, horarios, medios de pago y Apps Script con el centro. Conserva la versión anterior para revertir si falla esa prueba.

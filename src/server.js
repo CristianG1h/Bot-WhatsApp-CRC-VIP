@@ -4,24 +4,16 @@ const express = require("express");
 const path = require("path");
 
 const { PORT } = require("./config");
-const { instalarMediaHooks } = require("./services/mediaHooks");
-
-// Los hooks deben instalarse antes de requerir las rutas para que estas tomen
-// las funciones de envío ya adaptadas al canal correcto.
-instalarMediaHooks();
-
 const healthRoutes = require("./routes/health");
-const chatwootContext = require("./routes/chatwootContext");
-const habilitacionMiddleware = require("./routes/habilitacionMiddleware");
-const aiFallback = require("./routes/aiFallback");
 const whatsappRoutes = require("./routes/whatsapp");
 const Stats = require("./services/stats");
 const { getTwilioStatus } = require("./services/twilio");
 
 const app = express();
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: false }));
+app.disable("x-powered-by");
+app.use(express.json({ limit: "256kb", verify: (req, _res, bytes) => { req.rawBody = bytes; } }));
+app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 
 const dashboardPath = path.join(__dirname, "public", "dashboard.html");
 const publicPath = path.join(__dirname, "public");
@@ -92,6 +84,7 @@ function protegerDashboard(req, res, next) {
     return res.status(503).send("Dashboard no configurado");
   }
 
+  res.setHeader("Cache-Control", "no-store");
   const auth = req.headers.authorization || "";
 
   if (!auth.startsWith("Basic ")) {
@@ -187,18 +180,18 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
     const data = await Stats.getSnapshot(req.query || {});
     return res.json(data);
   } catch (error) {
-    console.error("❌ Error en /api/stats:", error);
-    return res.status(500).json({ ok: false, error: "Error cargando estadísticas" });
+    if (error.status !== 400) console.error("❌ Error en /api/stats:", error.name);
+    return res.status(error.status || 500).json({ ok: false, error: error.status === 400 ? error.message : "Error cargando estadísticas" });
   }
 });
 
 app.use("/", healthRoutes);
-app.use("/webhook", chatwootContext);
-app.use("/webhook", habilitacionMiddleware);
-app.use("/webhook", aiFallback);
+app.use("/webhook", require("./routes/webhookAuth"));
 app.use("/webhook", whatsappRoutes);
 
-app.listen(PORT, () => {
+async function start() {
+  await Stats.ready;
+  const server = app.listen(PORT, () => {
   const twilioStatus = getTwilioStatus();
   console.log(`✅ Bot CRC VIP activo en puerto ${PORT}`);
   console.log("📊 Dashboard protegido en / y /dashboard");
@@ -211,3 +204,22 @@ app.listen(PORT, () => {
   );
   console.log("🖼️ Guía de sede: vista previa de enlace WhatsApp, sin adjunto ni plantilla");
 });
+
+  const shutdown = () => {
+    whatsappRoutes.close();
+    server.close(async () => {
+      await require("./utils/messageQueue").drain();
+      await Stats.close();
+    });
+    setTimeout(() => process.exit(1), 25000).unref();
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+  return server;
+}
+app.use((error, _req, res, _next) => {
+  const status = error.status === 413 ? 413 : error.status === 400 || error instanceof SyntaxError ? 400 : 500;
+  res.status(status).json({ error: status === 500 ? "Error interno" : "Solicitud inválida" });
+});
+if (require.main === module) start().catch(() => { console.error("No se pudo iniciar el servidor"); process.exitCode = 1; });
+module.exports = { app, start };

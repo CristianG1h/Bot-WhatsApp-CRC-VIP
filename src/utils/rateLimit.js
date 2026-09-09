@@ -1,37 +1,15 @@
+"use strict";
+const { phoneKey } = require("./incoming");
 const hits = new Map();
-
-const NORMAL_MAX_MESSAGES = 20;
-const FORM_MAX_MESSAGES = 45;
-const WINDOW_MS = 60 * 1000;
-
-const FORM_STEPS = new Set([
-  "AGENDAR",
-  "DIA_CITA",
-  "DIA_PERSONALIZADO",
-  "HORARIO_CITA",
-  "HORARIO_PERSONALIZADO",
-  "NOMBRE_CITA",
-  "CEDULA_CITA",
-  "TELEFONO_CITA",
-  "CORREO_CITA",
-  "CONFIRMAR_CITA",
-  "ENVIANDO_CORREO_CITA",
-]);
-
+const WINDOW_MS = 60000;
 function isRateLimited(phone, step = "") {
   const now = Date.now();
-  const data = hits.get(phone) || [];
-
-  const recent = data.filter((time) => now - time < WINDOW_MS);
-  recent.push(now);
-
-  hits.set(phone, recent);
-
-  const maxMessages = FORM_STEPS.has(step)
-    ? FORM_MAX_MESSAGES
-    : NORMAL_MAX_MESSAGES;
-
-  return recent.length > maxMessages;
+  for (const [key, item] of hits) if (now - item.start >= WINDOW_MS) hits.delete(key);
+  const key = phoneKey(phone);
+  const entry = hits.get(key) || { start: now, count: 0 };
+  entry.count++;
+  hits.set(key, entry);
+  const max = /CITA|HORARIO|DIA_|CORREGIR/.test(step) ? 45 : 20;
+  return entry.count > max;
 }
-
 module.exports = { isRateLimited };
