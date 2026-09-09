@@ -1,8 +1,5 @@
 "use strict";
 
-const {
-  limpiarMensajeHabilitacionAntiguo,
-} = require("../services/crcMedia");
 
 const sessions = new Map();
 
@@ -18,6 +15,7 @@ function normalizarClaveTelefono(phone) {
 function crearSessionInicial(replyTo) {
   return {
     step: "MENU_INICIAL",
+    updatedAt: Date.now(),
     linea: "CRC",
     tramite: null,
     diaCita: null,
@@ -40,6 +38,8 @@ function crearSessionInicial(replyTo) {
 function getSession(phone) {
   const key = normalizarClaveTelefono(phone);
 
+  const old = sessions.get(key);
+  if (old && !old.botPausadoPorAsesor && Date.now() - old.updatedAt > 86400000) sessions.delete(key);
   if (!sessions.has(key)) {
     sessions.set(key, crearSessionInicial(phone));
   }
@@ -53,6 +53,8 @@ function updateSession(phone, data = {}) {
   const nueva = {
     ...current,
     ...data,
+    updatedAt: Date.now(),
+    noEntendidos: data.step && data.step !== current.step ? 0 : (data.noEntendidos ?? current.noEntendidos ?? 0),
   };
 
   if (!nueva.replyTo) {
@@ -60,14 +62,12 @@ function updateSession(phone, data = {}) {
   }
 
   sessions.set(key, nueva);
-  console.log("✅ Sesión actualizada:", key, nueva.step);
   return nueva;
 }
 
 function resetSession(phone) {
   const key = normalizarClaveTelefono(phone);
   sessions.delete(key);
-  console.log("🧹 Sesión reiniciada:", key);
 }
 
 function setReplyTarget(phone, replyTo = phone) {
@@ -84,15 +84,7 @@ function getAllSessions() {
 }
 
 function prepararMensajeSinConsultasExternas(_phone, body) {
-  const original = String(body || "");
-  let text = limpiarMensajeHabilitacionAntiguo(original);
-
-  if (original.includes("Cita preconfirmada - VIP CRC Galerías")) {
-    text +=
-      "\n\n📄 *Adjunto enviado:* certificado oficial de acreditación ONAC 22-CEP-076.";
-  }
-
-  return text.trim();
+  return String(body || "").trim();
 }
 
 module.exports = {

@@ -45,13 +45,25 @@ function cloneBase() {
 }
 
 let stats = cloneBase();
+const memoryEvents = [];
+let memoryTruncated = false;
 const usePostgres = Boolean(Pool && DATABASE_URL);
+function databaseSsl() {
+  const host = new URL(DATABASE_URL).hostname;
+  if (["localhost", "127.0.0.1", "[::1]"].includes(host)) return false;
+  return { rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== "false" };
+}
 const pool = usePostgres
   ? new Pool({
       connectionString: DATABASE_URL,
-      ssl: DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
+      query_timeout: 8000,
+      max: 5,
+      ssl: databaseSsl(),
     })
   : null;
+
+if (pool) pool.on("error", () => console.error("Conexión de estadísticas interrumpida"));
 
 function fechaBogotaKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -225,6 +237,10 @@ function registrarEventoDb({ waId, tipo, detalle, estado, keywords }) {
 
 function registrarInteraccion({ waId = "", tipo = "evento", detalle = "", estado = "ok", keywords = [] }) {
   const ahora = new Date();
+  memoryEvents.push({ wa_id: normalizarWaId(waId), wa_mask: maskPhone(waId),
+    fecha: fechaBogotaKey(ahora), hora: horaBogota(ahora), ts: ahora.getTime(),
+    tipo, detalle: String(detalle).slice(0, 160), estado, keywords: safeKeywords(keywords) });
+  if (memoryEvents.length > 50000) { memoryEvents.shift(); memoryTruncated = true; }
   stats.ultimasInteracciones.unshift({
     fecha: fechaBogotaKey(ahora),
     hora: horaBogota(ahora),
@@ -251,23 +267,23 @@ function buildDateFilter(query = {}) {
   if (range === "today") {
     const key = fechaBogotaKey(now);
     start = `${key}T00:00:00-05:00`;
-    end = `${key}T23:59:59-05:00`;
+    end = `${key}T23:59:59.999-05:00`;
   }
   if (range === "7d") {
     const d = new Date();
     d.setDate(d.getDate() - 6);
     start = `${fechaBogotaKey(d)}T00:00:00-05:00`;
-    end = `${fechaBogotaKey(now)}T23:59:59-05:00`;
+    end = `${fechaBogotaKey(now)}T23:59:59.999-05:00`;
   }
   if (range === "30d") {
     const d = new Date();
     d.setDate(d.getDate() - 29);
     start = `${fechaBogotaKey(d)}T00:00:00-05:00`;
-    end = `${fechaBogotaKey(now)}T23:59:59-05:00`;
+    end = `${fechaBogotaKey(now)}T23:59:59.999-05:00`;
   }
   if (range === "custom" && from && to) {
     start = `${from}T00:00:00-05:00`;
-    end = `${to}T23:59:59-05:00`;
+    end = `${to}T23:59:59.999-05:00`;
   }
   return { start, end, range };
 }
@@ -283,7 +299,7 @@ function buildChartDateFilter(query = {}) {
   if (range === "custom" && query.chartFrom && query.chartTo) {
     return {
       start: `${query.chartFrom}T00:00:00-05:00`,
-      end: `${query.chartTo}T23:59:59-05:00`,
+      end: `${query.chartTo}T23:59:59.999-05:00`,
       range,
       days: null,
       desde: query.chartFrom,
@@ -297,7 +313,7 @@ function buildChartDateFilter(query = {}) {
   startDate.setDate(startDate.getDate() - (days - 1));
   const desde = fechaBogotaKey(startDate);
   const hasta = fechaBogotaKey(endDate);
-  return { start: `${desde}T00:00:00-05:00`, end: `${hasta}T23:59:59-05:00`, range, days, desde, hasta };
+  return { start: `${desde}T00:00:00-05:00`, end: `${hasta}T23:59:59.999-05:00`, range, days, desde, hasta };
 }
 
 function buildWhere(query = {}, chart = false) {
@@ -352,9 +368,9 @@ async function getSnapshotPostgres(query = {}) {
     SELECT
       COUNT(DISTINCT wa_id) FILTER (WHERE wa_id IS NOT NULL AND tipo = 'mensaje_recibido')::int AS conversaciones,
       COUNT(*) FILTER (WHERE tipo = 'mensaje_recibido')::int AS mensajes_recibidos,
-      COUNT(*) FILTER (WHERE tipo IN ('mensaje_enviado','menu','crc','cia','faq','asesor','runt','simit','cita'))::int AS mensajes_enviados,
-      COUNT(*) FILTER (WHERE tipo = 'runt')::int AS runt_consultas,
-      COUNT(*) FILTER (WHERE tipo = 'simit')::int AS simit_consultas,
+      COUNT(*) FILTER (WHERE tipo IN ('mensaje_enviado','menu','crc','cia','faq'))::int AS mensajes_enviados,
+      COUNT(*) FILTER (WHERE tipo = 'runt' AND estado = 'ok')::int AS runt_consultas,
+      COUNT(*) FILTER (WHERE tipo = 'simit' AND estado = 'ok')::int AS simit_consultas,
       COUNT(*) FILTER (WHERE tipo = 'cita')::int AS citas_preconfirmadas,
       COUNT(*) FILTER (WHERE tipo = 'asesor')::int AS asesores_activados,
       COUNT(*) FILTER (WHERE tipo = 'no_reconocido')::int AS mensajes_no_reconocidos,
@@ -424,33 +440,60 @@ async function getSnapshotPostgres(query = {}) {
   };
 }
 
+
 function getSnapshotMemoria(query = {}) {
-  const chart = buildMemoryChart(query);
+  const filter = buildDateFilter(query);
+  const chart = buildChartDateFilter(query);
+  const q = String(query.q || "").toLowerCase().trim();
+  const matches = (e, f) => (!f.start || e.ts >= Date.parse(f.start)) &&
+    (!f.end || e.ts <= Date.parse(f.end)) &&
+    (!q || [e.detalle, e.tipo, e.estado, e.wa_id, ...e.keywords].join(" ").toLowerCase().includes(q));
+  const events = memoryEvents.filter((e) => matches(e, filter));
+  const chartEvents = memoryEvents.filter((e) => matches(e, chart));
+  const count = (types) => events.filter((e) => types.includes(e.tipo)).length;
+  const keywords = emptyKeywords();
+  const porHora = Array(24).fill(0);
+  for (const e of events) {
+    for (const k of e.keywords) keywords[k] = (keywords[k] || 0) + 1;
+    const h = new Date(e.ts).toLocaleString("en-GB", { timeZone: "America/Bogota", hour: "2-digit", hourCycle: "h23" });
+    porHora[Number(h)]++;
+  }
+  const days = new Map();
+  for (const e of chartEvents) days.set(e.fecha, (days.get(e.fecha) || 0) + 1);
+  const actividadPorDia = [];
+  for (let d = new Date(chart.start); d <= new Date(chart.end); d.setUTCDate(d.getUTCDate() + 1)) {
+    const key = fechaBogotaKey(d);
+    actividadPorDia.push({ fecha: key, label: fechaBogotaLabel(d), total: days.get(key) || 0 });
+  }
   return {
     totales: {
-      conversaciones: Array.isArray(stats.contactosUnicos) ? stats.contactosUnicos.length : 0,
-      mensajesRecibidos: stats.mensajesRecibidos,
-      mensajesEnviados: stats.mensajesEnviados,
-      runtConsultas: stats.runtConsultas,
-      simitConsultas: stats.simitConsultas,
-      citasPreconfirmadas: stats.citasPreconfirmadas,
-      asesoresActivados: stats.asesoresActivados,
-      mensajesNoReconocidos: stats.mensajesNoReconocidos,
-      duplicadosIgnorados: stats.duplicadosIgnorados,
-      rateLimitados: stats.rateLimitados,
-      erroresBot: stats.erroresBot,
+      conversaciones: new Set(events.filter((e) => e.tipo === "mensaje_recibido").map((e) => e.wa_id)).size,
+      mensajesRecibidos: count(["mensaje_recibido"]),
+      mensajesEnviados: count(["mensaje_enviado", "menu", "crc", "cia", "faq"]),
+      runtConsultas: events.filter((e) => e.tipo === "runt" && e.estado === "ok").length,
+      simitConsultas: events.filter((e) => e.tipo === "simit" && e.estado === "ok").length,
+      citasPreconfirmadas: count(["cita"]), asesoresActivados: count(["asesor"]),
+      mensajesNoReconocidos: count(["no_reconocido"]), duplicadosIgnorados: count(["duplicado"]),
+      rateLimitados: count(["rate_limit"]), erroresBot: count(["error"]),
     },
-    ultimasInteracciones: stats.ultimasInteracciones.slice(0, 50),
-    keywords: stats.keywords,
-    actividadPorDia: chart.actividadPorDia,
-    actividadPorHora: stats.porHora,
-    iniciadoEn: stats.iniciadoEn,
-    uptime: Math.floor(process.uptime()),
-    persistencia: "memoria",
-    zonaHoraria: "America/Bogota",
-    chartMeta: { range: chart.chartMeta.range, desde: chart.chartMeta.desde, hasta: chart.chartMeta.hasta },
-    filtros: { q: query.q || "", range: query.range || "all", from: query.from || "", to: query.to || "", chartRange: query.chartRange || "14d", chartOffset: query.chartOffset || "0" },
+    ultimasInteracciones: events.slice(-50).reverse().map(({ wa_id, keywords, ...e }) => e),
+    keywords, actividadPorDia, actividadPorHora: porHora, iniciadoEn: stats.iniciadoEn,
+    uptime: Math.floor(process.uptime()), persistencia: "memoria", zonaHoraria: "America/Bogota",
+    chartMeta: { range: chart.range, desde: chart.desde, hasta: chart.hasta },
+    filtros: { ...query }, retention: { maxEvents: 50000, truncated: memoryTruncated },
   };
+}
+function validateQuery(query) {
+  function range(from, to) {
+    const valid = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) &&
+      Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0, 10) === d;
+    if (!valid(from) || !valid(to) || from > to) throw Object.assign(new Error("Selecciona fechas válidas y ordenadas"), { status: 400 });
+    if (Date.parse(to) - Date.parse(from) > 366 * 86400000) throw Object.assign(new Error("El rango máximo es de 366 días"), { status: 400 });
+  }
+  if (query.range === "custom") range(query.from, query.to);
+  if (query.chartRange === "custom") range(query.chartFrom, query.chartTo);
+  if (query.chartOffset !== undefined && (!Number.isInteger(Number(query.chartOffset)) || Math.abs(Number(query.chartOffset)) > 120))
+    throw Object.assign(new Error("Desplazamiento de fechas inválido"), { status: 400 });
 }
 
 const Stats = {
@@ -475,9 +518,9 @@ const Stats = {
     if (estado === "ok") stats.simitConsultas++;
     registrarInteraccion({ waId, tipo: "simit", detalle: `Consulta SIMIT ${estado} ${documento ? `- ${documento}` : ""}`.trim(), estado, keywords: ["simit", "cia"] });
   },
-  citaPreconfirmada(waId, nombre = "usuario") {
+  citaPreconfirmada(waId) {
     stats.citasPreconfirmadas++;
-    registrarInteraccion({ waId, tipo: "cita", detalle: `Cita preconfirmada: ${nombre}`, estado: "ok", keywords: ["cita", "crc"] });
+    registrarInteraccion({ waId, tipo: "cita", detalle: "Solicitud de cita enviada", estado: "ok", keywords: ["cita", "crc"] });
   },
   asesorActivado(waId, motivo = "Asesor activado") {
     stats.asesoresActivados++;
@@ -501,14 +544,24 @@ const Stats = {
   },
   resetStats() {
     stats = cloneBase();
+    memoryEvents.length = 0;
+    memoryTruncated = false;
     saveStatsSoon();
   },
   async getSnapshot(query = {}) {
-    if (pool) return await getSnapshotPostgres(query);
+    validateQuery(query);
+    if (pool) {
+      try { return await getSnapshotPostgres(query); }
+      catch { return { ...getSnapshotMemoria(query), degraded: true }; }
+    }
     return getSnapshotMemoria(query);
   },
 };
 
-initDb();
+Stats.ready = initDb();
+Stats.close = async () => {
+  clearTimeout(saveTimer);
+  if (pool) { await saveStatsNow().catch(() => {}); await pool.end(); }
+};
 
 module.exports = Stats;

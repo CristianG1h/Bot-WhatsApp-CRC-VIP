@@ -5,6 +5,7 @@ const { prepararMensajeSinConsultasExternas } = require("../utils/sessions");
 const contactCache = new Map();
 const conversationCache = new Map();
 const pendingNotes = new Map();
+const pendingFlushes = new Map();
 let chatwootDisabledWarningShown = false;
 
 const MAX_PENDING_NOTES = 30;
@@ -20,10 +21,7 @@ function hasChatwootConfig() {
 }
 
 function chatwootEnabled() {
-  // Para este bot la trazabilidad en Chatwoot es obligatoria cuando existen
-  // las credenciales. Una variable CHATWOOT_ENABLED antigua en false no debe
-  // apagar silenciosamente las notas privadas.
-  return hasChatwootConfig();
+  return hasChatwootConfig() && process.env.CHATWOOT_ENABLED !== "false";
 }
 
 function getConfig() {
@@ -66,6 +64,7 @@ function cacheKey(rawPhone) {
 async function chatwootRequest(path, options = {}) {
   const { baseUrl, apiToken } = getConfig();
   const response = await fetch(`${baseUrl}${path}`, {
+    signal: AbortSignal.timeout(8000),
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
@@ -85,7 +84,7 @@ async function chatwootRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    const error = new Error(`Chatwoot API ${response.status}: ${JSON.stringify(data)}`);
+    const error = new Error(`Chatwoot API HTTP ${response.status}`);
     error.status = response.status;
     error.data = data;
     throw error;
@@ -116,7 +115,7 @@ async function searchContactByPhone(rawPhone) {
   const { accountId } = getConfig();
   const phone = cleanPhone(rawPhone);
   const identifier = identifierFromPhone(rawPhone);
-  const queries = [phone, identifier, phone.replace("+", "")];
+  const queries = [phone, identifier];
 
   for (const query of queries) {
     try {
@@ -189,7 +188,7 @@ function queuePendingNote(rawPhone, text) {
   );
   current.push({ text, createdAt: now });
   pendingNotes.set(key, current.slice(-MAX_PENDING_NOTES));
-  console.warn("🕓 Nota Chatwoot en espera de conversación real:", cleanPhone(rawPhone));
+  console.warn("🕓 Nota Chatwoot en espera de conversación real");
 }
 
 async function createPrivateNoteInConversation(conversationId, text) {
@@ -210,35 +209,39 @@ async function createPrivateNoteInConversation(conversationId, text) {
 }
 
 async function flushPendingNotes(rawPhone, conversationId) {
-  if (!conversationId || !hasChatwootConfig()) return;
+  if (!conversationId || !chatwootEnabled()) return;
   const key = cacheKey(rawPhone);
   const items = pendingNotes.get(key) || [];
   if (!items.length) return;
 
   pendingNotes.delete(key);
   const now = Date.now();
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     if (now - item.createdAt >= PENDING_TTL_MS) continue;
     try {
       await createPrivateNoteInConversation(conversationId, item.text);
-      console.log("📝 Nota pendiente registrada en Chatwoot:", cleanPhone(rawPhone));
+      console.log("📝 Nota pendiente registrada en Chatwoot");
     } catch (error) {
       console.error("⚠️ Error enviando nota pendiente a Chatwoot:", error.message);
-      queuePendingNote(rawPhone, item.text);
+      pendingNotes.set(key, [...items.slice(index), ...(pendingNotes.get(key) || [])].slice(-MAX_PENDING_NOTES));
       break;
     }
   }
 }
 
 async function rememberConversation(rawPhone, conversationId) {
-  if (!hasChatwootConfig()) return null;
+  if (!chatwootEnabled()) return null;
   const id = Number(conversationId);
   if (!Number.isFinite(id) || id <= 0) return null;
 
   const key = cacheKey(rawPhone);
   conversationCache.set(key, id);
-  console.log("🔗 Conversación Chatwoot vinculada:", cleanPhone(rawPhone), `#${id}`);
-  await flushPendingNotes(rawPhone, id);
+  // Link immediately; slow note delivery must not block customer replies.
+  if (!pendingFlushes.has(key)) {
+    const flush = flushPendingNotes(rawPhone, id).finally(() => pendingFlushes.delete(key));
+    pendingFlushes.set(key, flush);
+    void flush.catch(() => null);
+  }
   return id;
 }
 
@@ -282,7 +285,7 @@ async function addPrivateNote(rawPhone, content) {
 
   try {
     const result = await createPrivateNoteInConversation(conversationId, text);
-    console.log("📝 Nota privada registrada en Chatwoot:", cleanPhone(rawPhone), `#${conversationId}`);
+    console.log("📝 Nota privada registrada en Chatwoot");
     return result;
   } catch (error) {
     console.error("⚠️ Error creando nota privada en Chatwoot:", error.message);
@@ -293,7 +296,7 @@ async function addPrivateNote(rawPhone, content) {
       conversationCache.set(cacheKey(rawPhone), conversationId);
       try {
         const result = await createPrivateNoteInConversation(conversationId, text);
-        console.log("📝 Nota privada registrada en Chatwoot después de reintento:", cleanPhone(rawPhone), `#${conversationId}`);
+        console.log("📝 Nota privada registrada en Chatwoot después de reintento");
         return result;
       } catch (retryError) {
         console.error("❌ No fue posible registrar la nota privada en Chatwoot:", retryError.message);
@@ -319,7 +322,17 @@ async function logOutgoingMessage(rawPhone, content) {
 }
 
 async function markNeedsAgent(rawPhone, reason = "Usuario solicitó hablar con asesor") {
-  return addPrivateNote(rawPhone, `🔔 *Transferencia a asesor*\n\nMotivo: ${reason}`);
+  if (!chatwootEnabled()) return null;
+  const note = await addPrivateNote(rawPhone, "🔔 *Solicitud de atención humana*\n\nMotivo: " + reason);
+  const conversationId = await resolveConversation(rawPhone);
+  if (conversationId) {
+    const { accountId } = getConfig();
+    try {
+      await chatwootRequest("/api/v1/accounts/" + accountId + "/conversations/" + conversationId + "/toggle_status",
+        { method: "POST", body: { status: "open" } });
+    } catch { /* The note remains available to the team. */ }
+  }
+  return note;
 }
 
 function getChatwootNoteStatus() {

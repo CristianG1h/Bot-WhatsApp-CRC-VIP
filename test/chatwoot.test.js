@@ -1,0 +1,40 @@
+"use strict";
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+process.env.CHATWOOT_BASE_URL = "https://chat.example.test";
+process.env.CHATWOOT_ACCOUNT_ID = "1";
+process.env.CHATWOOT_INBOX_ID = "2";
+process.env.CHATWOOT_API_TOKEN = "test-only";
+process.env.CHATWOOT_ENABLED = "true";
+const cw = require("../src/services/chatwoot");
+const reply = (data, ok = true) => ({ ok, status: ok ? 200 : 503, text: async () => JSON.stringify(data) });
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+test("Notas pendientes no bloquean una respuesta y se conservan tras fallar", async () => {
+  const from = "whatsapp:+570000000001";
+  global.fetch = async () => reply({ payload: [] });
+  await cw.addPrivateNote(from, "Primera nota de prueba");
+  await cw.addPrivateNote(from, "Segunda nota de prueba");
+  assert.equal(cw.getChatwootNoteStatus().pendingNotes, 2);
+  let release;
+  global.fetch = async () => new Promise((resolve) => { release = resolve; });
+  assert.equal(await cw.rememberConversation(from, 10), 10);
+  // If linking waited for the remote note, the previous await would not finish.
+  assert.equal(typeof release, "function");
+  release(reply({}, false));
+  await settle();
+  assert.equal(cw.getChatwootNoteStatus().pendingNotes, 2);
+  const notes = [];
+  global.fetch = async (_url, options) => { notes.push(JSON.parse(options.body).content); return reply({ id: 1 }); };
+  await cw.rememberConversation(from, 10); await settle();
+  assert.deepEqual(notes, ["Primera nota de prueba", "Segunda nota de prueba"]);
+  assert.equal(cw.getChatwootNoteStatus().pendingNotes, 0);
+});
+test("CHATWOOT_ENABLED=false impide las notas y la vinculación", async () => {
+  process.env.CHATWOOT_ENABLED = "false";
+  let called = false;
+  global.fetch = async () => { called = true; throw new Error("No debería llamar"); };
+  assert.equal(await cw.addPrivateNote("570000000002", "Prueba"), null);
+  assert.equal(await cw.rememberConversation("570000000002", 11), null);
+  assert.equal(called, false);
+  assert.equal(cw.getChatwootNoteStatus().enabled, false);
+});

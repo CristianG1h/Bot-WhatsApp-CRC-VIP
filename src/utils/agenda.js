@@ -222,7 +222,7 @@ function slotsBasePorFecha(fecha) {
 }
 
 function obtenerSlotsDisponibles(fecha) {
-  if (!esDiaLaboralCRC(fecha)) return [];
+  if (!fecha || !Number.isFinite(fecha.getTime()) || esFechaPasada(fecha) || !esDiaLaboralCRC(fecha)) return [];
 
   const ahora = obtenerAhoraBogota();
   const hoy = obtenerHoyBogota();
@@ -277,8 +277,7 @@ function horarioGeneralFecha(fecha) {
   return esSabado(fecha) ? "7:00 a.m. a 11:30 a.m." : "7:00 a.m. a 3:30 p.m.";
 }
 
-function menuDiasDisponibles() {
-  const dias = obtenerProximosDiasDisponibles(2);
+function menuDiasDisponibles(dias = obtenerProximosDiasDisponibles(2)) {
   const opciones = dias
     .map(
       (fecha, index) =>
@@ -286,44 +285,10 @@ function menuDiasDisponibles() {
     )
     .join("\n\n");
 
-  return `Perfecto ✅\n\nVamos a continuar directamente con tu agendamiento.\n\nElige uno de los próximos días disponibles:\n\n${opciones}\n\n3️⃣ *Otro día*\n\nDomingos y festivos no laboramos.\n\nResponde con el número de la opción.`;
+  return `📅 Fechas y horarios para solicitar tu cita\n\nElige uno de los próximos días disponibles:\n\n${opciones}\n\n3️⃣ *Otro día*\n\nDomingos y festivos no laboramos.\n\nResponde con el número de la opción.`;
 }
 
-function detectarOpcionDia(msg) {
-  const texto = normalizarTexto(msg);
-  const dias = obtenerProximosDiasDisponibles(2);
-
-  if (texto === "1" && dias[0]) {
-    return { tipo: "fecha", fecha: dias[0], texto: formatearFechaColombia(dias[0]) };
-  }
-
-  if (texto === "2" && dias[1]) {
-    return { tipo: "fecha", fecha: dias[1], texto: formatearFechaColombia(dias[1]) };
-  }
-
-  if (texto === "3" || texto.includes("otro dia") || texto === "otro" || texto === "otra") {
-    return { tipo: "otro", fecha: null, texto: "Otro día" };
-  }
-
-  if (texto.includes("hoy")) {
-    const hoy = obtenerHoyBogota();
-    if (tieneDisponibilidad(hoy)) {
-      return { tipo: "fecha", fecha: hoy, texto: formatearFechaColombia(hoy) };
-    }
-  }
-
-  if (texto.includes("manana")) {
-    const manana = obtenerHoyBogota(1);
-    if (tieneDisponibilidad(manana)) {
-      return { tipo: "fecha", fecha: manana, texto: formatearFechaColombia(manana) };
-    }
-  }
-
-  return null;
-}
-
-function menuHorariosCita(fecha) {
-  const slots = obtenerSlotsDisponibles(fecha);
+function menuHorariosCita(fecha, slots = obtenerSlotsDisponibles(fecha)) {
   if (!slots.length) return null;
 
   const opciones = slots
@@ -364,6 +329,9 @@ function parsearFechaUsuario(valor) {
   if (!texto) return null;
   if (texto === "hoy") return obtenerHoyBogota();
   if (texto === "manana") return obtenerHoyBogota(1);
+  if (texto === "pasado manana") return obtenerHoyBogota(2);
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return construirFechaValida(Number(iso[1]), Number(iso[2]), Number(iso[3]));
 
   const numerica = texto.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/);
   if (numerica) {
@@ -416,8 +384,33 @@ function motivoNoLaboral(fecha) {
   return null;
 }
 
+function validarHorarioPersonalizado(value, fecha) {
+  const t = normalizarTexto(value);
+  const slots = obtenerSlotsDisponibles(fecha);
+  if (!slots.length) return null;
+  if (/^(en |por )?la (manana|tarde)$/.test(t)) {
+    const afternoon = t.includes("tarde");
+    return slots.find((s) => afternoon ? s.inicio >= 12 * 60 : s.inicio < 12 * 60) || null;
+  }
+  const match = t.match(/^(?:a las |sobre las )?(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  if (minute > 59 || hour > 23 || (match[3] && (hour < 1 || hour > 12))) return null;
+  if (match[3]) hour = hour % 12 + (match[3] === "p" ? 12 : 0);
+  else if (hour >= 1 && hour <= 3) hour += 12;
+  const minutes = hour * 60 + minute;
+  const now = obtenerAhoraBogota();
+  const minimum = esMismaFecha(fecha, obtenerHoyBogota()) ? minutosDelDia(now) + 15 : 0;
+  if (minutes < minimum || !slots.some((s) => minutes >= s.inicio && minutes < s.fin)) return null;
+  return { inicio: minutes, fin: minutes + 1, texto: horaTexto(minutes), exacto: true };
+}
+function horarioSigueDisponible(fecha, horario) {
+  if (!horario || !fecha || esFechaPasada(fecha)) return false;
+  if (horario.exacto) return Boolean(validarHorarioPersonalizado(horario.texto, fecha));
+  return obtenerSlotsDisponibles(fecha).some((s) => s.inicio === horario.inicio && s.fin === horario.fin);
+}
 module.exports = {
-  detectarOpcionDia,
   esFechaPasada,
   fechaKey,
   formatearFechaColombia,
@@ -428,4 +421,8 @@ module.exports = {
   obtenerSlotsDisponibles,
   parsearFechaUsuario,
   sumarDias,
+  obtenerProximosDiasDisponibles,
+  validarHorarioPersonalizado,
+  horarioSigueDisponible,
+  festivosColombia,
 };

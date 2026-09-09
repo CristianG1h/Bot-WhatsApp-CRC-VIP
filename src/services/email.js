@@ -12,6 +12,7 @@ async function enviarCorreoCita(datos) {
   const response = await fetch(process.env.GOOGLE_SCRIPT_EMAIL_URL, {
     method: "POST",
     redirect: "follow",
+    signal: AbortSignal.timeout(20000),
     headers: {
       "Content-Type": "text/plain;charset=utf-8",
     },
@@ -24,10 +25,8 @@ async function enviarCorreoCita(datos) {
 
   const data = await response.json().catch(() => ({}));
 
-  if (!response.ok || !data.ok) {
-    throw new Error(
-      `Error Google Script ${response.status}: ${JSON.stringify(data)}`
-    );
+  if (!response.ok || data.ok !== true) {
+    throw new Error("Google Script no confirmó el envío; HTTP " + response.status);
   }
 
   return true;

@@ -12,18 +12,17 @@ const {
   logIncomingMessage,
   logOutgoingMessage,
   markNeedsAgent,
+  rememberConversation,
 } = require("../services/chatwoot");
 const {
   getSession,
   updateSession,
   resetSession,
   setReplyTarget,
-  getAllSessions,
 } = require("../utils/sessions");
 const { limpiarTexto, esCedulaValida } = require("../utils/validation");
 const { isRateLimited } = require("../utils/rateLimit");
 const {
-  detectarOpcionDia,
   esFechaPasada,
   fechaKey,
   formatearFechaColombia,
@@ -34,95 +33,36 @@ const {
   obtenerSlotsDisponibles,
   parsearFechaUsuario,
   sumarDias,
+  obtenerProximosDiasDisponibles,
+  validarHorarioPersonalizado,
+  horarioSigueDisponible,
 } = require("../utils/agenda");
 
-const ASESOR_TIMEOUT_MS = 10 * 60 * 1000;
-const processedIncomingMessages = new Map();
-
-function normalizarTelefono(valor) {
-  return String(valor || "")
-    .replace(/^whatsapp:/i, "")
-    .replace(/[^0-9]/g, "");
-}
+const { randomUUID } = require("node:crypto");
+const { extractIncoming, phoneKey } = require("../utils/incoming");
+const { enqueue, isDuplicate } = require("../utils/messageQueue");
+const { answerQuestion, normalize, safeFallback } = require("../services/answers");
+const { business, catalog } = require("../services/knowledge");
+const { createAgendaReminders } = require("../services/agendaReminders");
 
 function normalizarCedula(valor) {
   return String(valor || "").replace(/\D/g, "");
 }
 
-function esDuplicado(from, text, options = {}) {
-  const now = Date.now();
-  const source = String(options.source || "unknown");
-  const messageId = options.messageId ? String(options.messageId) : null;
 
-  if (messageId) {
-    const idKey = `id:${messageId}`;
-    const last = processedIncomingMessages.get(idKey);
-    if (last && now - last.time < 60000) return true;
-    processedIncomingMessages.set(idKey, { time: now, source, messageId });
-  }
-
-  const contentKey = `content:${normalizarTelefono(from)}::${String(text || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")}`;
-
-  const previous = processedIncomingMessages.get(contentKey);
-  if (previous && now - previous.time < 4000) {
-    const diferenteFuente = previous.source !== source;
-    const faltaId = !messageId || !previous.messageId;
-    if (diferenteFuente || faltaId) return true;
-  }
-
-  processedIncomingMessages.set(contentKey, { time: now, source, messageId });
-
-  for (const [key, data] of processedIncomingMessages.entries()) {
-    if (now - Number(data?.time || 0) > 120000) {
-      processedIncomingMessages.delete(key);
-    }
-  }
-
-  return false;
-}
-
-function textoSeguroMeta(message) {
-  return (
-    message?.text?.body ||
-    message?.interactive?.button_reply?.id ||
-    message?.interactive?.button_reply?.title ||
-    message?.interactive?.list_reply?.id ||
-    message?.interactive?.list_reply?.title ||
-    ""
-  );
-}
 
 function esSi(msg) {
-  const t = String(msg || "").trim().toLowerCase();
-  return ["1", "si", "sí", "claro", "ok", "okay", "dale", "quiero"].includes(t) ||
-    t.startsWith("si ") ||
-    t.startsWith("sí ");
+  return /^(1|si+|claro|ok|okay|dale|de acuerdo|confirmar cita|si quiero|si deseo|si por favor|si gracias|si deseo renovar|si quiero renovar|si me interesa|si estoy interesad[oa]( en renovar( la licencia)?)?)[.! ]*$/.test(normalize(msg));
 }
-
 function esNo(msg) {
-  const t = String(msg || "").trim().toLowerCase();
-  return ["2", "no", "no gracias", "por ahora no"].includes(t) || t.startsWith("no ");
+  return /^(2|no|no gracias|por ahora no|no quiero|no deseo|no quiero agendar|no deseo agendar|por el momento no)[.! ]*$/.test(normalize(msg));
 }
-
 function esComandoInicio(msg) {
-  return ["menu", "menú", "inicio", "volver", "reiniciar"].includes(
-    String(msg || "").trim().toLowerCase()
-  );
+  return /^(menu|inicio|volver|reiniciar)$/.test(normalize(msg));
 }
-
 function esSolicitudAsesor(msg) {
-  const t = String(msg || "").trim().toLowerCase();
-  return (
-    t === "asesor" ||
-    t.includes("hablar con asesor") ||
-    t.includes("hablar con un asesor") ||
-    t.includes("agente humano") ||
-    t.includes("hablar con alguien") ||
-    t.includes("persona real")
-  );
+  return /\b(asesor|asesora|agente humano|hablar con alguien|persona real|atencion humana)\b/.test(normalize(msg)) &&
+    !/\b(no quiero|no necesito)\b/.test(normalize(msg));
 }
 
 function esCorreoValido(correo) {
@@ -154,23 +94,8 @@ Responde con el número de la opción.`;
 }
 
 function mensajePromocionRenovacion() {
-  return `Perfecto ✅
-
-Si tu licencia es categoría *A1, A2, B1, B2, C1, C2 o C3*, tenemos una promoción especial este mes.
-
-💰 *Renovación o refrendación: $180.000*
-
-📍 Estamos ubicados en *Cra. 28A #51-70, barrio Galerías – Bogotá*.
-🚗 Contamos con parqueadero.
-
-Atendemos normalmente por *orden de llegada*, pero si agendas una cita, *respetaremos la hora programada*.
-
-Aceptamos diferentes medios de pago.
-
-¿Deseas agendar tu cita?
-
-1️⃣ Sí
-2️⃣ No`;
+  return catalog().precios + "\n\n📍 " + business.address + "\nCómo llegar: " + business.maps +
+    "\n\n¿Deseas agendar tu cita?\n\n1️⃣ Sí\n2️⃣ No";
 }
 
 function menuNoRenovacion() {
@@ -186,14 +111,7 @@ Responde con el número de la opción.`;
 }
 
 function mensajePrimeraVez() {
-  return `Perfecto ✅
-
-También realizamos el examen para quienes van a sacar su licencia *por primera vez*.
-
-¿Deseas agendar tu atención?
-
-1️⃣ Sí
-2️⃣ No`;
+  return catalog().primera_vez + "\n\n¿Deseas agendar tu atención?\n\n1️⃣ Sí\n2️⃣ No";
 }
 
 function menuInformacion() {
@@ -209,39 +127,8 @@ function menuInformacion() {
 }
 
 function respuestaInformacion(opcion) {
-  const respuestas = {
-    "1": `💰 *Precios*
-
-• Renovación o refrendación de una categoría: *$180.000*
-• Dos categorías en combo: *$250.000*
-
-Aplican categorías A1, A2, B1, B2, C1, C2 o C3.`,
-    "2": `⏱️ *Duración aproximada*
-
-El proceso del examen CRC normalmente tarda entre *40 y 60 minutos*, dependiendo del flujo de atención.`,
-    "3": `🕒 *Horarios de atención*
-
-Lunes a viernes: *7:00 a.m. a 3:30 p.m.*
-Sábados: *7:00 a.m. a 11:30 a.m.*
-Domingos y festivos: *no laboramos*.`,
-    "4": `💳 *Medios de pago*
-
-Aceptamos diferentes medios de pago. Si necesitas confirmar un medio específico, puedes escribir *asesor*.`,
-    "5": `🚗 *Proceso*
-
-1. Eliges fecha y horario aproximado.
-2. Registramos tus datos.
-3. Confirmamos tu solicitud.
-4. Asistes al CRC con tu documento físico original.`,
-    "6": `📍 *Ubicación*
-
-*VIP CRC Galerías*
-Cra. 28A #51-70, barrio Galerías – Bogotá.
-
-🚗 Contamos con parqueadero.`,
-  };
-
-  return respuestas[String(opcion)] || null;
+  const ids = { "1": "precios", "2": "duracion", "3": "horarios", "4": "pagos", "5": "proceso", "6": "ubicacion" };
+  return catalog()[ids[opcion]] || null;
 }
 
 function mensajePedirOtroDia() {
@@ -297,24 +184,12 @@ function mensajeConfirmacion(session) {
 }
 
 function resumenCita(datos) {
-  return `✅ *Cita preconfirmada - VIP CRC Galerías*
-
-👤 Nombre: *${datos.nombre}*
-🪪 Cédula: *${datos.cedula}*
-📞 Teléfono: *${datos.telefono}*
-📧 Correo: ${datos.correo}
-🚗 Trámite: *${datos.tramite}*
-📅 Día: *${datos.dia}*
-⏰ Horario aproximado: *${datos.horario}*
-
-📍 *VIP CRC Galerías*
-Cra. 28A #51-70, barrio Galerías – Bogotá.
-
-📄 Si necesitas validar la habilitación del centro, un asesor puede compartirte los documentos correspondientes.
-
-Recuerda traer tu documento físico original.
-
-También enviamos la confirmación al correo registrado.`;
+  return "✅ *Solicitud de cita enviada - VIP CRC Galerías*\n\n" +
+    "👤 Nombre: *" + datos.nombre + "*\n" +
+    "📅 Día: *" + datos.dia + "*\n⏰ Horario aproximado: *" + datos.horario + "*\n" +
+    "Referencia: " + datos.solicitudId + "\n\n" +
+    "Enviamos la solicitud al correo registrado. La disponibilidad y la hora final deben ser confirmadas por el centro.\n\n" +
+    "📍 " + business.address + "\n" + business.maps + "\nTrae tu documento físico original.";
 }
 
 async function responder(to, body) {
@@ -328,95 +203,75 @@ async function responder(to, body) {
     result = await sendText(to, texto);
   }
 
-  Stats.mensajeEnviado(to, texto.slice(0, 120));
-  await logOutgoingMessage(to, texto);
+  if (!result) throw new Error("El canal no aceptó el mensaje");
+  Stats.mensajeEnviado(to, "Respuesta del bot: " + getSession(to).step);
+  void logOutgoingMessage(to, texto).catch(() => Stats.error(to, "No se pudo registrar la respuesta en Chatwoot"));
   return result;
 }
 
-function asesorSigueActivo(session) {
-  return Boolean(
-    session?.botPausadoPorAsesor &&
-      session?.asesorLastAt &&
-      Date.now() - Number(session.asesorLastAt) < ASESOR_TIMEOUT_MS
-  );
-}
-
 async function transferirAAsesor(from, motivo = "Usuario solicitó hablar con asesor") {
+  updateSession(from, {
+    step: "HUMANO", necesitaAsesor: true, asesorActivo: true,
+    botPausadoPorAsesor: true, asesorLastAt: Date.now(),
+  });
   Stats.asesorActivado(from, motivo);
-  await markNeedsAgent(from, motivo).catch((error) => {
-    console.error("⚠️ No se pudo marcar para asesor:", error.message);
-  });
-
-  updateSession(from, {
-    step: "HUMANO",
-    necesitaAsesor: true,
-    asesorActivo: true,
-    botPausadoPorAsesor: true,
-    asesorLastAt: Date.now(),
-    avisoReactivacionBotEnviado: false,
-  });
-
-  await responder(
-    from,
-    `Perfecto ✅
-
-Un asesor continuará con tu atención por este mismo chat.
-
-Déjanos tu consulta y te responderemos en cuanto sea posible.`
-  );
+  const result = await markNeedsAgent(from, motivo).catch(() => null);
+  await responder(from, result
+    ? "Dejé tu solicitud para un asesor. Déjanos tu consulta y el equipo te responderá por este chat cuando esté disponible.\n\nEscribe *menú* si quieres volver al asistente automático."
+    : "No pude notificar automáticamente al equipo en este momento. Deja tu consulta en este chat para que puedan revisarla.\n\nEscribe *menú* si quieres volver al asistente automático.");
 }
-
-async function reactivarBotPorInactividad(from, session) {
-  if (!session?.botPausadoPorAsesor || asesorSigueActivo(session)) return;
-  if (session.avisoReactivacionBotEnviado) return;
-
-  resetSession(from);
-  updateSession(from, {
-    step: "RENOVACION_INTERES",
-    linea: "CRC",
-    replyTo: from,
-    avisoReactivacionBotEnviado: true,
-  });
-
-  await responder(
-    from,
-    `Hola 👋
-
-Como no hemos tenido actividad reciente del asesor, el asistente automático vuelve a estar disponible.
-
-${mensajePreguntaRenovacion()}`
-  );
+async function mostrarDias(from, prefix = "") {
+  const dias = obtenerProximosDiasDisponibles(2).map(fechaKey);
+  updateSession(from, { step: "DIA_CITA", diasOfrecidos: dias });
+  await responder(from, (prefix ? prefix + "\n\n" : "") + menuDiasDisponibles(dias.map(fechaDesdeISO)));
 }
-
-setInterval(async () => {
-  try {
-    for (const [from, session] of getAllSessions()) {
-      if (session?.botPausadoPorAsesor && !asesorSigueActivo(session)) {
-        await reactivarBotPorInactividad(from, session);
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error verificando inactividad de asesor:", error.message);
-  }
-}, 60 * 1000).unref();
-
-function detectarHorario(msg, fecha) {
+async function mostrarHorarios(from, fecha) {
   const slots = obtenerSlotsDisponibles(fecha);
+  updateSession(from, { step: "HORARIO_CITA", horariosOfrecidos: slots });
+  await responder(from, menuHorariosCita(fecha, slots));
+}
+async function despuesDeDato(from, patch, nextStep, prompt) {
+  const session = getSession(from);
+  updateSession(from, { ...patch, step: session.corrigiendo ? "CONFIRMAR_CITA" : nextStep, corrigiendo: false, noEntendidos: 0 });
+  await responder(from, session.corrigiendo ? mensajeConfirmacion(getSession(from)) : prompt);
+}
+function continuacion(session) {
+  const prompts = {
+    RENOVACION_INTERES: "¿Deseas renovar? Responde *1 (sí)* o *2 (no)*.",
+    AGENDAR_RENOVACION: "¿Agendamos? Responde *1 (sí)* o *2 (no)*.",
+    AGENDAR_PRIMERA_VEZ: "¿Agendamos? Responde *1 (sí)* o *2 (no)*.",
+    NO_RENOVACION: "Puedes elegir *1 Primera vez*, *2 Información* o *3 Asesor*.",
+    MENU_INFORMACION: "Puedes hacer otra pregunta, escribir *agendar* o *asesor*.",
+    DIA_CITA: "Elige una de las fechas que te mostré o escribe una fecha.",
+    DIA_PERSONALIZADO: "¿Qué fecha prefieres?",
+    HORARIO_CITA: "Elige un horario de la lista o escribe la hora que prefieres.",
+    HORARIO_PERSONALIZADO: "¿A qué hora prefieres asistir?",
+    NOMBRE_CITA: "Para continuar, envía tu nombre completo.",
+    CEDULA_CITA: "Para continuar, envía tu número de cédula.",
+    TELEFONO_CITA: "Para continuar, envía tu celular o escribe *este número*.",
+    CORREO_CITA: "Para continuar, envía tu correo o escribe *no tengo correo*.",
+    CONFIRMAR_CITA: "Responde *1* para enviar la solicitud o *2* para corregir un dato.",
+    CORREGIR_CITA: "¿Qué dato quieres corregir? Elige una opción del menú anterior.",
+  };
+  return prompts[session.step] ? "\n\n" + prompts[session.step] : "";
+}
+async function noEntendido(from, prompt) {
+  const count = (getSession(from).noEntendidos || 0) + 1;
+  updateSession(from, { noEntendidos: count });
+  Stats.mensajeNoReconocido(from, "Entrada fuera del paso " + getSession(from).step);
+  if (count >= 3) return transferirAAsesor(from, "Tres respuestas no comprendidas en el flujo");
+  await responder(from, "No pude identificar esa respuesta. " + prompt + "\nTambién puedes escribir *asesor*.");
+}
+
+function detectarHorario(msg, fecha, session) {
+  const slots = session.horariosOfrecidos || [];
   const numero = Number(String(msg || "").trim());
-
   if (Number.isInteger(numero) && numero >= 1 && numero <= slots.length) {
-    return slots[numero - 1].texto;
+    const selected = slots[numero - 1];
+    if (!obtenerSlotsDisponibles(fecha).some((s) => s.inicio === selected.inicio && s.fin === selected.fin)) return "VENCIDO";
+    return selected;
   }
-
-  if (Number.isInteger(numero) && numero === slots.length + 1) {
-    return "Otro horario";
-  }
-
-  const texto = String(msg || "").toLowerCase();
-  if (texto.includes("otro") || texto.includes("diferente")) {
-    return "Otro horario";
-  }
-
+  if (numero === slots.length + 1 || /otro|diferente/.test(normalize(msg))) return "OTRO";
   return null;
 }
 
@@ -448,29 +303,27 @@ El siguiente día disponible es:
     fechaSugeridaISO: null,
   });
 
-  await responder(from, menuHorariosCita(seleccionada));
+  await mostrarHorarios(from, seleccionada);
 }
 
 async function manejarDiaCita(from, text) {
-  const seleccion = detectarOpcionDia(text);
-
-  if (!seleccion) {
-    await responder(from, menuDiasDisponibles());
-    return;
+  const session = getSession(from);
+  const opcion = String(text || "").trim();
+  if (["1", "2"].includes(opcion)) {
+    const iso = (session.diasOfrecidos || [])[Number(opcion) - 1];
+    const fecha = fechaDesdeISO(iso);
+    if (!fecha || esFechaPasada(fecha) || motivoNoLaboral(fecha) || !obtenerSlotsDisponibles(fecha).length) {
+      await responder(from, "La fecha seleccionada ya no está disponible. Te muestro las opciones actuales.");
+      return mostrarDias(from);
+    }
+    return guardarFechaYMostrarHorarios(from, fecha);
   }
-
-  if (seleccion.tipo === "otro") {
-    updateSession(from, {
-      step: "DIA_PERSONALIZADO",
-      diaCita: "Otro día",
-      fechaCitaISO: null,
-      fechaSugeridaISO: null,
-    });
-    await responder(from, mensajePedirOtroDia());
-    return;
+  if (opcion === "3" || /^(otro|otro dia|otra fecha)$/.test(normalize(text))) {
+    updateSession(from, { step: "DIA_PERSONALIZADO", fechaSugeridaISO: null });
+    return responder(from, mensajePedirOtroDia());
   }
-
-  await guardarFechaYMostrarHorarios(from, seleccion.fecha);
+  if (parsearFechaUsuario(text)) return manejarDiaPersonalizado(from, text, session);
+  return noEntendido(from, "Elige *1*, *2* u *otro día*; también puedes escribir una fecha.");
 }
 
 async function manejarDiaPersonalizado(from, text, session) {
@@ -542,32 +395,17 @@ function reiniciarFlujo(from) {
 }
 
 async function procesarMensaje(from, text, options = {}) {
-  if (esDuplicado(from, text, options)) return;
-
   Stats.mensajeRecibido(from);
   setReplyTarget(from, from);
 
   if (!options.skipChatwootIncomingLog) {
-    await logIncomingMessage(from, text).catch((error) => {
-      console.error("⚠️ No se pudo registrar incoming en Chatwoot:", error.message);
-    });
+    void logIncomingMessage(from, text).catch(() => Stats.error(from, "No se pudo registrar la entrada en Chatwoot"));
   }
 
   let session = getSession(from);
   const msg = String(text || "").trim().toLowerCase();
 
-  if (session.botPausadoPorAsesor) {
-    if (esComandoInicio(msg)) {
-      reiniciarFlujo(from);
-      await responder(from, mensajePreguntaRenovacion());
-      return;
-    }
-
-    if (asesorSigueActivo(session)) return;
-    await reactivarBotPorInactividad(from, session);
-    return;
-  }
-
+  if (session.botPausadoPorAsesor && !esComandoInicio(msg)) return;
   if (isRateLimited(from, session.step)) {
     Stats.rateLimitado(from);
     await responder(
@@ -583,26 +421,64 @@ async function procesarMensaje(from, text, options = {}) {
     return;
   }
 
-  // El primer mensaje del usuario SIEMPRE inicia la interacción propuesta:
-  // no importa si escribió "hola", "quiero renovar", una pregunta o cualquier otro texto.
-  if (session.step === "MENU_INICIAL") {
-    updateSession(from, {
-      step: "RENOVACION_INTERES",
-      linea: "CRC",
-      replyTo: from,
-    });
-    await responder(from, mensajePreguntaRenovacion());
-    return;
-  }
 
+  if (esSolicitudAsesor(msg)) return transferirAAsesor(from);
+  if (/^(no me escriban|no mas mensajes|no quiero mensajes|baja|stop|detener)$/.test(normalize(msg))) {
+    updateSession(from, { step: "HUMANO", botPausadoPorAsesor: true, noContactar: true });
+    await markNeedsAgent(from, "El usuario solicita detener la automatización").catch(() => null);
+    return responder(from, "Entendido. Detengo las respuestas automáticas. Puedes escribir *menú* si deseas retomarlas.");
+  }
+  if (session.step === "ENVIANDO_CORREO_CITA") return;
+  if (options.media && !text) {
+    return responder(from, "Recibí un archivo o audio. En este momento no puedo interpretarlo. Escríbeme tu consulta o escribe *asesor* para que el equipo lo revise." + continuacion(session));
+  }
+  if (session.step === "MENU_INICIAL") {
+    session = updateSession(from, { step: "RENOVACION_INTERES", linea: "CRC", replyTo: from });
+    const initialAnswer = await answerQuestion(text, session);
+    if (initialAnswer) updateSession(from, { lastIntent: initialAnswer.intents[0] });
+    if (initialAnswer?.redirect) return responder(from, initialAnswer.text);
+    return responder(from, (initialAnswer ? initialAnswer.text + "\n\n" : "") + mensajePreguntaRenovacion());
+  }
+  if (/^(gracias|muchas gracias|listo gracias|ok gracias|chao|adios)[.! ]*$/.test(normalize(msg))) {
+    return responder(from, "Con gusto. Estamos atentos a ayudarte." + continuacion(session));
+  }
+  if (/^(no entiendo|no entendi|no se|no entiendo nada)$/.test(normalize(msg))) {
+    return noEntendido(from, continuacion(session).trim() || "Cuéntame qué necesitas.");
+  }
+  if (normalize(msg) === "no tengo correo" && session.step === "CORREO_CITA") {
+    return transferirAAsesor(from, "El usuario no tiene correo para la solicitud de cita");
+  }
+  if (normalize(msg) === "agendar" && ["MENU_INFORMACION", "CITA_ENVIADA", "NO_RENOVACION"].includes(session.step)) {
+    return mostrarDias(from);
+  }
+  if (/^(renovar|quiero renovar|deseo renovar|si quiero renovar|si estoy interesado|si estoy interesada)$/.test(normalize(msg)) &&
+      ["RENOVACION_INTERES", "NO_RENOVACION", "MENU_INFORMACION", "CITA_ENVIADA"].includes(session.step)) {
+    updateSession(from, { tramite: "Renovación / Refrendación", step: "AGENDAR_RENOVACION",
+      recordatorioAgendaEnviado: false, recordatorioAgendaCancelado: false });
+    return responder(from, mensajePromocionRenovacion());
+  }
+  if (["RENOVACION_INTERES", "NO_RENOVACION", "MENU_INFORMACION"].includes(session.step) &&
+      /^(quiero |deseo |necesito )?(sacar |tramitar |obtener )?(la licencia )?(por )?primera vez[.! ]*$/.test(normalize(msg))) {
+    updateSession(from, { step: "AGENDAR_PRIMERA_VEZ", tramite: "Primera vez" });
+    return responder(from, mensajePrimeraVez());
+  }
+  const choice = ["RENOVACION_INTERES", "AGENDAR_RENOVACION", "AGENDAR_PRIMERA_VEZ"].includes(session.step) &&
+    (esSi(msg) || esNo(msg) || /^(agendar|quiero agendar|si agendar)$/.test(normalize(msg)));
+  const answer = choice ? null : await answerQuestion(text, session);
+  if (answer) {
+    updateSession(from, { lastIntent: answer.intents[0], noEntendidos: 0,
+      ...(answer.redirect ? { recordatorioAgendaCancelado: true } : {}) });
+    return responder(from, answer.text + (answer.redirect ? "" : continuacion(session)));
+  }
   if (session.step === "RENOVACION_INTERES") {
     if (esSi(msg)) {
       updateSession(from, {
         step: "AGENDAR_RENOVACION",
         tramite: "Renovación / Refrendación",
+        recordatorioAgendaEnviado: false,
+        recordatorioAgendaCancelado: false,
       });
-      await responder(from, mensajePromocionRenovacion());
-      return;
+      return responder(from, mensajePromocionRenovacion());
     }
 
     if (esNo(msg)) {
@@ -611,17 +487,16 @@ async function procesarMensaje(from, text, options = {}) {
       return;
     }
 
-    await responder(from, mensajePreguntaRenovacion());
-    return;
+    return noEntendido(from, "¿Deseas renovar? Responde *1 (sí)* o *2 (no)*.");
   }
 
   if (session.step === "AGENDAR_RENOVACION") {
-    if (esSi(msg) || msg.includes("agendar")) {
+    if (esSi(msg) || /^(agendar|quiero agendar|si agendar)$/.test(normalize(msg))) {
       updateSession(from, {
         step: "DIA_CITA",
         tramite: "Renovación / Refrendación",
       });
-      await responder(from, menuDiasDisponibles());
+      await mostrarDias(from);
       return;
     }
 
@@ -631,7 +506,7 @@ async function procesarMensaje(from, text, options = {}) {
       return;
     }
 
-    await responder(from, mensajePromocionRenovacion());
+    await noEntendido(from, "¿Agendamos? Responde *1 (sí)* o *2 (no)*.");
     return;
   }
 
@@ -656,17 +531,16 @@ async function procesarMensaje(from, text, options = {}) {
       return;
     }
 
-    await responder(from, menuNoRenovacion());
-    return;
+    return noEntendido(from, "Elige *1 Primera vez*, *2 Información* o *3 Asesor*.");
   }
 
   if (session.step === "AGENDAR_PRIMERA_VEZ") {
-    if (esSi(msg) || msg.includes("agendar")) {
+    if (esSi(msg) || /^(agendar|quiero agendar|si agendar)$/.test(normalize(msg))) {
       updateSession(from, {
         step: "DIA_CITA",
         tramite: "Primera vez",
       });
-      await responder(from, menuDiasDisponibles());
+      await mostrarDias(from);
       return;
     }
 
@@ -676,8 +550,7 @@ async function procesarMensaje(from, text, options = {}) {
       return;
     }
 
-    await responder(from, mensajePrimeraVez());
-    return;
+    return noEntendido(from, "¿Agendamos? Responde *1 (sí)* o *2 (no)*.");
   }
 
   if (session.step === "MENU_INFORMACION") {
@@ -689,7 +562,7 @@ async function procesarMensaje(from, text, options = {}) {
 
     const info = respuestaInformacion(msg);
     if (info) {
-      await responder(from, `${info}\n\n${menuInformacion()}`);
+      await responder(from, info + "\n\nPuedes hacer otra pregunta, escribir *agendar* o *asesor*.");
       return;
     }
 
@@ -698,8 +571,7 @@ async function procesarMensaje(from, text, options = {}) {
       return;
     }
 
-    await responder(from, menuInformacion());
-    return;
+    return noEntendido(from, safeFallback);
   }
 
   if (session.step === "DIA_CITA") {
@@ -712,63 +584,29 @@ async function procesarMensaje(from, text, options = {}) {
     return;
   }
 
-  if (session.step === "HORARIO_CITA") {
+  if (["HORARIO_CITA", "HORARIO_PERSONALIZADO"].includes(session.step)) {
     const fecha = fechaDesdeISO(session.fechaCitaISO);
-
-    if (!fecha) {
-      updateSession(from, { step: "DIA_CITA" });
-      await responder(from, menuDiasDisponibles());
-      return;
+    if (!fecha || esFechaPasada(fecha) || !obtenerSlotsDisponibles(fecha).length) {
+      await responder(from, "La fecha u horario ya no está disponible. Elige una nueva fecha.");
+      return mostrarDias(from);
     }
-
-    const horario = detectarHorario(msg, fecha);
-    if (!horario) {
-      await responder(from, menuHorariosCita(fecha));
-      return;
+    const selection = session.step === "HORARIO_CITA" ? detectarHorario(msg, fecha, session) : null;
+    if (selection === "VENCIDO") {
+      await responder(from, "Ese horario ya finalizó. Te muestro los horarios actuales.");
+      return mostrarHorarios(from, fecha);
     }
-
-    if (horario === "Otro horario") {
+    if (selection === "OTRO") {
       updateSession(from, { step: "HORARIO_PERSONALIZADO" });
-      await responder(
-        from,
-        `Perfecto ✅
-
-Indícanos el horario aproximado que prefieres.
-
-Ejemplo:
-*10:00 a.m.*
-*Después de las 2:00 p.m.*
-*En la mañana*`
-      );
-      return;
+      return responder(from, "Escribe la hora que prefieres, por ejemplo *10:00 a.m.* o *2:00 p.m.*. Debe estar dentro del horario de atención.");
     }
-
-    updateSession(from, {
-      step: "NOMBRE_CITA",
-      horarioCita: horario,
-    });
-    await responder(from, mensajeNombre());
-    return;
-  }
-
-  if (session.step === "HORARIO_PERSONALIZADO") {
-    const horario = String(text || "").trim();
-    if (horario.length < 4) {
-      await responder(from, "Por favor indícanos un horario aproximado más claro.");
-      return;
-    }
-
-    updateSession(from, {
-      step: "NOMBRE_CITA",
-      horarioCita: horario,
-    });
-    await responder(from, mensajeNombre());
-    return;
+    const horario = selection || validarHorarioPersonalizado(text, fecha);
+    if (!horario) return noEntendido(from, "Elige un horario de la lista o escribe una hora dentro del horario de atención.");
+    return despuesDeDato(from, { horarioCita: horario.texto, horarioSeleccionado: horario }, "NOMBRE_CITA", mensajeNombre());
   }
 
   if (session.step === "NOMBRE_CITA") {
     const nombre = String(text || "").trim().replace(/\s+/g, " ");
-    if (nombre.length < 5 || !nombre.includes(" ") || /\d/.test(nombre)) {
+    if (nombre.length < 5 || nombre.length > 100 || !/^[\p{L}][\p{L} .\u0027’-]+$/u.test(nombre) || !nombre.includes(" ") || /\b(quiero|necesito|tengo|entiendo|asesor|correo|cedula|informacion|bueno|vale)\b/.test(normalize(nombre))) {
       await responder(
         from,
         "Por favor envíame tu *nombre completo*, con nombre y apellido y sin números."
@@ -776,17 +614,12 @@ Ejemplo:
       return;
     }
 
-    updateSession(from, {
-      step: "CEDULA_CITA",
-      nombreCita: nombre,
-    });
-    await responder(from, mensajeCedula());
-    return;
+    return despuesDeDato(from, { nombreCita: nombre }, "CEDULA_CITA", mensajeCedula());
   }
 
   if (session.step === "CEDULA_CITA") {
     const cedula = normalizarCedula(text);
-    if (!esCedulaValida(cedula)) {
+    if (!/^[\d.\s-]+$/.test(text) || !esCedulaValida(cedula)) {
       await responder(
         from,
         "⚠️ Por favor envía una cédula válida, solo números, con o sin puntos."
@@ -794,32 +627,23 @@ Ejemplo:
       return;
     }
 
-    updateSession(from, {
-      step: "TELEFONO_CITA",
-      cedulaCita: cedula,
-    });
-    await responder(from, mensajeTelefono());
-    return;
+    return despuesDeDato(from, { cedulaCita: cedula }, "TELEFONO_CITA", mensajeTelefono() + "\nTambién puedes escribir *este número*.");
   }
 
   if (session.step === "TELEFONO_CITA") {
-    const telefono = String(text || "").replace(/\D/g, "");
+    const mismo = /^(este numero|el mismo|este)$/.test(normalize(text));
+    const telefono = mismo ? phoneKey(from) : /^[+\d.\s-]+$/.test(text) ? phoneKey(text) : "";
     if (!esTelefonoValido(telefono)) {
       await responder(from, "⚠️ Por favor envía un número de teléfono válido.");
       return;
     }
 
-    updateSession(from, {
-      step: "CORREO_CITA",
-      telefonoCita: telefono,
-    });
-    await responder(from, mensajeCorreo());
-    return;
+    return despuesDeDato(from, { telefonoCita: telefono }, "CORREO_CITA", mensajeCorreo() + "\nSi no tienes, escribe *no tengo correo*.");
   }
 
   if (session.step === "CORREO_CITA") {
     const correo = String(text || "").trim().toLowerCase();
-    if (!esCorreoValido(correo)) {
+    if (correo.length > 254 || !esCorreoValido(correo)) {
       await responder(
         from,
         "⚠️ Por favor envía un correo válido. Ejemplo: nombre@gmail.com"
@@ -830,85 +654,75 @@ Ejemplo:
     updateSession(from, {
       step: "CONFIRMAR_CITA",
       correoCita: correo,
+      corrigiendo: false,
     });
     await responder(from, mensajeConfirmacion(getSession(from)));
     return;
   }
 
+  if (session.step === "CORREGIR_CITA") {
+    const field = {
+      "1": ["NOMBRE_CITA", mensajeNombre()],
+      "2": ["CEDULA_CITA", mensajeCedula()],
+      "3": ["TELEFONO_CITA", mensajeTelefono()],
+      "4": ["CORREO_CITA", mensajeCorreo()],
+    }[msg];
+    if (field) {
+      updateSession(from, { step: field[0], corrigiendo: true });
+      return responder(from, field[1]);
+    }
+    if (msg === "5") {
+      updateSession(from, { corrigiendo: true });
+      return mostrarDias(from);
+    }
+    if (msg === "6") {
+      const fecha = fechaDesdeISO(session.fechaCitaISO);
+      updateSession(from, { corrigiendo: true });
+      return fecha && obtenerSlotsDisponibles(fecha).length ? mostrarHorarios(from, fecha) : mostrarDias(from);
+    }
+    return noEntendido(from, "Elige un dato del 1 al 6.");
+  }
   if (session.step === "CONFIRMAR_CITA") {
-    if (msg === "2" || msg.includes("corregir") || msg.includes("cambiar")) {
-      const tramite = session.tramite;
-      reiniciarFlujo(from);
-      updateSession(from, {
-        step: "DIA_CITA",
-        tramite,
-      });
-      await responder(
-        from,
-        `Sin problema ✅
-
-Vamos a tomar los datos nuevamente.
-
-${menuDiasDisponibles()}`
-      );
-      return;
+    if (msg === "2" || /^(corregir|corregir datos|cambiar)$/.test(normalize(msg))) {
+      updateSession(from, { step: "CORREGIR_CITA" });
+      return responder(from, "¿Qué deseas corregir?\n1️⃣ Nombre\n2️⃣ Cédula\n3️⃣ Teléfono\n4️⃣ Correo\n5️⃣ Fecha\n6️⃣ Horario");
     }
-
-    if (!(msg === "1" || esSi(msg) || msg.includes("confirmar") || msg.includes("correcto"))) {
-      await responder(from, "Por favor responde:\n\n1️⃣ Confirmar cita\n2️⃣ Corregir datos");
-      return;
+    if (!esSi(msg) && !/^(confirmar|correcto)$/.test(normalize(msg))) {
+      return noEntendido(from, "Responde *1* para enviar la solicitud o *2* para corregir un dato.");
     }
-
+    const fecha = fechaDesdeISO(session.fechaCitaISO);
+    if (!horarioSigueDisponible(fecha, session.horarioSeleccionado)) {
+      updateSession(from, { corrigiendo: true });
+      await responder(from, "El horario elegido ya no está disponible. Conservé tus datos; elige una nueva fecha.");
+      return mostrarDias(from);
+    }
+    const solicitudId = session.solicitudId || randomUUID();
     const datos = {
-      nombre: session.nombreCita,
-      cedula: session.cedulaCita,
-      telefono: session.telefonoCita,
-      correo: session.correoCita,
-      tramite: session.tramite || "Licencia de conducción",
-      dia: session.diaCita || "Día por confirmar",
-      horario: session.horarioCita || "Horario por confirmar",
+      nombre: session.nombreCita, cedula: session.cedulaCita, telefono: session.telefonoCita,
+      correo: session.correoCita, tramite: session.tramite || "Licencia de conducción",
+      dia: session.diaCita, horario: session.horarioCita, fechaISO: session.fechaCitaISO, solicitudId,
     };
-
-    updateSession(from, { step: "ENVIANDO_CORREO_CITA" });
-    await responder(
-      from,
-      "Estoy guardando tu solicitud y enviando la confirmación al correo ✅"
-    );
-
+    updateSession(from, { step: "ENVIANDO_CORREO_CITA", solicitudId });
+    let sent = false;
     try {
       await enviarCorreoCita(datos);
-      Stats.citaPreconfirmada(from, datos.nombre || "usuario");
-      await responder(from, resumenCita(datos));
-    } catch (error) {
-      console.error("❌ Error enviando correo:", error.message);
-      await responder(
-        from,
-        `✅ *Solicitud de cita recibida*
-
-Tus datos quedaron registrados en esta conversación, pero en este momento no fue posible enviar el correo automático.
-
-👤 Nombre: *${datos.nombre}*
-🪪 Cédula: *${datos.cedula}*
-📞 Teléfono: *${datos.telefono}*
-📧 Correo: ${datos.correo}
-🚗 Trámite: *${datos.tramite}*
-📅 Día: *${datos.dia}*
-⏰ Horario: *${datos.horario}*
-
-Un asesor continuará con la confirmación final.`
-      );
+      sent = true;
+    } catch {
+      Stats.error(from, "No se pudo confirmar el envío de correo de la solicitud");
     }
-
-    resetSession(from);
+    if (sent) {
+      Stats.citaPreconfirmada(from);
+      resetSession(from);
+      updateSession(from, { step: "CITA_ENVIADA", solicitudId });
+      await responder(from, resumenCita(datos));
+    } else {
+      await responder(from, "No pude confirmar el envío del correo. Tu solicitud sigue pendiente de revisión; no repitas el envío. Voy a dejar el caso al equipo para verificarlo.");
+      await transferirAAsesor(from, "Verificar solicitud " + solicitudId + "; envío de correo no confirmado. Datos en esta conversación.");
+    }
     return;
   }
-
-  if (session.step === "ENVIANDO_CORREO_CITA") {
-    await responder(
-      from,
-      "Estamos procesando tu confirmación. Por favor espera un momento."
-    );
-    return;
+  if (session.step === "CITA_ENVIADA") {
+    return responder(from, "Tu solicitud fue enviada. Para revisarla, cambiarla o cancelarla escribe *asesor*. Para otra solicitud, escribe *agendar*.");
   }
 
   if (session.step === "HUMANO") {
@@ -919,140 +733,56 @@ Un asesor continuará con la confirmación final.`
   await responder(from, mensajePreguntaRenovacion());
 }
 
-router.get("/", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
+const reminders = createAgendaReminders({
+  getSession, updateSession, enqueue, sendDates: mostrarDias,
+  onError: (from) => {
+    Stats.error(from, "No se pudo enviar el recordatorio de agenda");
+    updateSession(from, { step: "HUMANO", botPausadoPorAsesor: true });
+    void markNeedsAgent(from, "Revisar recordatorio de agenda no enviado").catch(() => null);
+  },
+});
+async function handleIncoming(incoming) {
+  if (isDuplicate(incoming)) {
+    Stats.duplicadoIgnorado(incoming.from);
+    return;
   }
-
+  reminders.cancel(incoming.from);
+  return enqueue(incoming.from, async () => {
+    if (incoming.conversationId) await rememberConversation(incoming.from, incoming.conversationId).catch(() => null);
+    if (incoming.human) {
+      updateSession(incoming.from, { step: "HUMANO", botPausadoPorAsesor: true, asesorLastAt: Date.now() });
+      return;
+    }
+    try {
+      await procesarMensaje(incoming.from, incoming.text || "", incoming);
+      reminders.schedule(incoming.from);
+    } catch (error) {
+      Stats.error(incoming.from, "Fallo procesando o enviando respuesta");
+      console.error("Error de procesamiento:", error.name);
+      updateSession(incoming.from, { step: "HUMANO", botPausadoPorAsesor: true });
+      await markNeedsAgent(incoming.from, "Error de respuesta; revisar conversación antes de continuar").catch(() => null);
+    }
+  });
+}
+router.get("/", (req, res) => {
+  if (VERIFY_TOKEN && req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === VERIFY_TOKEN) {
+    return res.status(200).send(String(req.query["hub.challenge"] || ""));
+  }
   return res.sendStatus(403);
 });
-
-router.post("/", async (req, res) => {
-  res.sendStatus(200);
-
-  try {
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const message = changes?.value?.messages?.[0];
-    if (!message) return;
-
-    const from = message.from;
-    const text = limpiarTexto(textoSeguroMeta(message));
-    if (!from || !text) return;
-
-    await procesarMensaje(from, text, {
-      source: "meta",
-      messageId: message.id || null,
-    });
-  } catch (error) {
-    console.error("❌ Error webhook Meta:", error.message);
-  }
-});
-
-router.post("/twilio", async (req, res) => {
-  res.status(200).send("OK");
-
-  try {
-    const from = req.body.From;
-    const text = limpiarTexto(req.body.Body);
-    if (!from || !text) return;
-
-    await procesarMensaje(from, text, {
-      source: "twilio",
-      messageId: req.body.MessageSid || req.body.SmsMessageSid || null,
-    });
-  } catch (error) {
-    console.error("❌ Error webhook Twilio:", error.message);
-  }
-});
-
-router.post("/chatwoot", async (req, res) => {
-  res.status(200).send("OK");
-
-  try {
-    const payload = req.body || {};
-    const event = payload.event;
-    const messageType = payload.message_type || payload.message?.message_type;
-    const content = payload.content || payload.message?.content || "";
-    const isPrivate = payload.private === true || payload.message?.private === true;
-
-    if (isPrivate) return;
-    if (event && event !== "message_created") return;
-
-    const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
-    const payloadInboxId =
-      payload.inbox?.id ||
-      payload.inbox_id ||
-      payload.conversation?.inbox_id ||
-      payload.conversation?.inbox?.id ||
-      payload.message?.inbox_id ||
-      payload.message?.inbox?.id ||
-      payload.conversation?.meta?.inbox?.id ||
-      payload.conversation?.contact_inbox?.inbox_id ||
-      payload.contact_inbox?.inbox_id ||
-      null;
-
-    if (
-      expectedInboxId &&
-      (!payloadInboxId || Number(payloadInboxId) !== expectedInboxId)
-    ) {
-      return;
+for (const route of ["/", "/twilio", "/chatwoot"]) {
+  router.post(route, (req, res) => {
+    let events;
+    try { events = extractIncoming(req.path, req.body || {}); }
+    catch { return res.status(400).json({ error: "Evento inválido" }); }
+    if (route === "/twilio") res.type("text/xml").status(200).send("<Response/>");
+    else res.status(200).send("OK");
+    for (const incoming of events) {
+      void handleIncoming(incoming).catch(() => Stats.error(incoming.from, "Cola de mensajes saturada"));
     }
-
-    const sender =
-      payload.sender ||
-      payload.message?.sender ||
-      payload.conversation?.contact ||
-      payload.contact ||
-      {};
-    const contact = payload.conversation?.contact || payload.contact || sender || {};
-
-    const phone =
-      sender.phone_number ||
-      contact.phone_number ||
-      payload.conversation?.meta?.sender?.phone_number ||
-      payload.conversation?.contact_inbox?.source_id ||
-      payload.contact_inbox?.source_id ||
-      "";
-
-    if (!phone) return;
-
-    const from = phone.startsWith("whatsapp:")
-      ? phone
-      : `whatsapp:${phone.startsWith("+") ? phone : `+${phone}`}`;
-
-    if (messageType === "outgoing") {
-      updateSession(from, {
-        step: "HUMANO",
-        necesitaAsesor: true,
-        asesorActivo: true,
-        botPausadoPorAsesor: true,
-        asesorLastAt: Date.now(),
-        avisoReactivacionBotEnviado: false,
-      });
-      console.log("👤 Asesor tomó la conversación:", from);
-      return;
-    }
-
-    if (messageType !== "incoming" || !String(content).trim()) return;
-
-    await procesarMensaje(from, limpiarTexto(content), {
-      source: "chatwoot",
-      skipChatwootIncomingLog: true,
-      messageId:
-        payload.id ||
-        payload.message?.id ||
-        payload.message_id ||
-        payload.content_attributes?.external_id ||
-        null,
-    });
-  } catch (error) {
-    console.error("❌ Error webhook Chatwoot:", error.message);
-  }
-});
-
+  });
+}
+router.handleIncoming = handleIncoming;
+router.close = () => reminders.close();
 module.exports = router;
