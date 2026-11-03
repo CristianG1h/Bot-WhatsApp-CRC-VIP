@@ -23,7 +23,7 @@ El primer mensaje que envíe un usuario siempre inicia la misma interacción com
 5. Domingos y festivos de Colombia se excluyen automáticamente.
 6. Los sábados usan horario de 7:00 a.m. a 11:30 a.m.; lunes a viernes, de 7:00 a.m. a 3:30 p.m.
 7. Los horarios se muestran mediante un List Picker de Twilio.
-8. Solicita nombre completo, cédula, celular y correo.
+8. Solicita nombre completo, teléfono de contacto, cédula y correo, en ese orden. Al recibir el teléfono, guarda una nota privada en Chatwoot con el nombre y el número, aunque la persona no termine la cita.
 9. Muestra un resumen con botones **Confirmar cita / Corregir datos**.
 10. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
 11. Después de la confirmación final, comparte la acreditación ONAC configurada para el CRC.

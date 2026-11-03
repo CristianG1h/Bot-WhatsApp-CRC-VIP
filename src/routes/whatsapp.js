@@ -11,6 +11,7 @@ const { enviarCorreoCita } = require("../services/email");
 const {
   logIncomingMessage,
   logOutgoingMessage,
+  addPrivateNote,
   markNeedsAgent,
 } = require("../services/chatwoot");
 const {
@@ -777,8 +778,30 @@ Ejemplo:
     }
 
     updateSession(from, {
-      step: "CEDULA_CITA",
+      step: "TELEFONO_CITA",
       nombreCita: nombre,
+    });
+    await responder(from, mensajeTelefono());
+    return;
+  }
+
+  if (session.step === "TELEFONO_CITA") {
+    const telefono = String(text || "").replace(/\D/g, "");
+    if (!esTelefonoValido(telefono)) {
+      await responder(from, "⚠️ Por favor envía un número de teléfono válido.");
+      return;
+    }
+
+    updateSession(from, {
+      step: "CEDULA_CITA",
+      telefonoCita: telefono,
+    });
+    // Dejar el contacto disponible para el asesor aunque el agendamiento quede incompleto.
+    await addPrivateNote(
+      from,
+      `📋 *Datos de contacto CRC*\n\n👤 Nombre: *${session.nombreCita || "No registrado"}*\n📞 Teléfono: *${telefono}*`
+    ).catch((error) => {
+      console.error("⚠️ No fue posible registrar el contacto en Chatwoot:", error.message);
     });
     await responder(from, mensajeCedula());
     return;
@@ -795,23 +818,8 @@ Ejemplo:
     }
 
     updateSession(from, {
-      step: "TELEFONO_CITA",
-      cedulaCita: cedula,
-    });
-    await responder(from, mensajeTelefono());
-    return;
-  }
-
-  if (session.step === "TELEFONO_CITA") {
-    const telefono = String(text || "").replace(/\D/g, "");
-    if (!esTelefonoValido(telefono)) {
-      await responder(from, "⚠️ Por favor envía un número de teléfono válido.");
-      return;
-    }
-
-    updateSession(from, {
       step: "CORREO_CITA",
-      telefonoCita: telefono,
+      cedulaCita: cedula,
     });
     await responder(from, mensajeCorreo());
     return;
