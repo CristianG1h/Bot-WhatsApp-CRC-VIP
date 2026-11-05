@@ -19,7 +19,7 @@ function esConfirmacionFinal(texto) {
 function esPromocionRenovacion(texto) {
   const text = String(texto || "");
   return (
-    text.includes("Renovación o refrendación: $180.000") &&
+    text.includes("Renovación o refrendación: $190.000") &&
     text.includes("¿Deseas agendar tu cita?")
   );
 }

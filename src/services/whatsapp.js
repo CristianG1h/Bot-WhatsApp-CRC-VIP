@@ -250,7 +250,7 @@ async function intentarMensajeInteractivo(to, mensaje) {
   }
 
   if (
-    mensaje.includes("Renovación o refrendación: $180.000") &&
+    mensaje.includes("Renovación o refrendación: $190.000") &&
     mensaje.includes("¿Deseas agendar tu cita?")
   ) {
     const body = quitarBloque(mensaje, /\n\n1️⃣ Sí\n2️⃣ No\s*$/);

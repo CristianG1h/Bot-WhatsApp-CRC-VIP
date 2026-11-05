@@ -430,7 +430,7 @@ async function intentarMensajeInteractivoTwilio(to, mensaje) {
   }
 
   if (
-    text.includes("Renovación o refrendación: $180.000") &&
+    text.includes("Renovación o refrendación: $190.000") &&
     text.includes("¿Deseas agendar tu cita?")
   ) {
     await enviarFachadaSiCorresponde(to);

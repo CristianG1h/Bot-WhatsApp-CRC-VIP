@@ -14,16 +14,18 @@ Chatwoot conserva la conversación y las notas privadas, pero no se usa para con
 
 ## Flujo actual
 
+Tarifas del flujo: **$190.000** para renovación/refrendación de una categoría y **$270.000** para el combo de dos categorías.
+
 El primer mensaje que envíe un usuario siempre inicia la misma interacción comercial, sin importar si escribe `Hola`, `Quiero renovar`, una pregunta o cualquier otro texto:
 
 1. Pregunta si está interesado en renovar la licencia con botones **Sí / No**.
-2. Si responde **Sí**, envía la foto guía de la sede por Twilio, muestra la promoción de renovación y ofrece **Agendar / No**.
+2. Si responde **Sí**, solicita de inmediato **nombre completo y teléfono de contacto**. Al recibir ambos, guarda una nota privada en Chatwoot y después muestra la promoción de renovación y ofrece **Agendar / No**.
 3. Si responde **No**, ofrece **Primera vez / Información / Asesor**.
 4. El agendamiento muestra únicamente días disponibles.
 5. Domingos y festivos de Colombia se excluyen automáticamente.
 6. Los sábados usan horario de 7:00 a.m. a 11:30 a.m.; lunes a viernes, de 7:00 a.m. a 3:30 p.m.
 7. Los horarios se muestran mediante un List Picker de Twilio.
-8. Solicita nombre completo, teléfono de contacto, cédula y correo, en ese orden. Al recibir el teléfono, guarda una nota privada en Chatwoot con el nombre y el número, aunque la persona no termine la cita.
+8. Para renovación, reutiliza el nombre y teléfono capturados al comienzo y solicita solamente cédula y correo. En otros casos solicita nombre completo, teléfono, cédula y correo durante el agendamiento.
 9. Muestra un resumen con botones **Confirmar cita / Corregir datos**.
 10. Envía la confirmación por correo y conserva las respuestas del bot como notas privadas en Chatwoot.
 11. Después de la confirmación final, comparte la acreditación ONAC configurada para el CRC.

@@ -220,12 +220,12 @@ function esEntradaPropiaDelPaso(step, text) {
     return true;
   }
 
-  if (step === "NOMBRE_CITA" && t.includes(" ") && !pareceConsulta(t)) {
+  if (["NOMBRE_CITA", "NOMBRE_CONTACTO"].includes(step) && t.includes(" ") && !pareceConsulta(t)) {
     return true;
   }
 
   if (
-    ["CEDULA_CITA", "TELEFONO_CITA"].includes(step) &&
+    ["CEDULA_CITA", "TELEFONO_CITA", "TELEFONO_CONTACTO"].includes(step) &&
     /\d{5,}/.test(t.replace(/\D/g, ""))
   ) {
     return true;
@@ -263,12 +263,14 @@ function continuacion(session) {
     case "HORARIO_PERSONALIZADO":
       return "\n\nCuando quieras continuar, indícame el horario aproximado que prefieres.";
 
+    case "NOMBRE_CONTACTO":
     case "NOMBRE_CITA":
       return "\n\nPara continuar con el agendamiento, envíame tu nombre completo.";
 
     case "CEDULA_CITA":
       return "\n\nPara continuar, envíame tu número de cédula.";
 
+    case "TELEFONO_CONTACTO":
     case "TELEFONO_CITA":
       return "\n\nPara continuar, envíame tu número de celular.";
 
@@ -307,7 +309,7 @@ function respuestaLocalSegura(text) {
   }
 
   if (/\b(precio|costo|cuanto|vale|valor)\b/.test(t)) {
-    return `La promoción de *renovación o refrendación de una categoría* es de *$180.000*.\n\nPara *dos categorías en combo*, el valor es de *$250.000*.`;
+    return `La promoción de *renovación o refrendación de una categoría* es de *$190.000*.\n\nPara *dos categorías en combo*, el valor es de *$270.000*.`;
   }
 
   if (/\b(horario|hora|atienden|abren|cierran)\b/.test(t)) {
@@ -346,8 +348,8 @@ async function consultarIA(text, session) {
 
 INFORMACIÓN AUTORIZADA:
 - Dirección: Cra. 28A #51-70, barrio Galerías, Bogotá. Hay parqueadero.
-- Renovación o refrendación de una categoría A1, A2, B1, B2, C1, C2 o C3: $180.000.
-- Combo de dos categorías: $250.000.
+- Renovación o refrendación de una categoría A1, A2, B1, B2, C1, C2 o C3: $190.000.
+- Combo de dos categorías: $270.000.
 - Duración aproximada del examen CRC: 40 a 60 minutos, según flujo de atención.
 - Horario: lunes a viernes 7:00 a.m. a 3:30 p.m.; sábados 7:00 a.m. a 11:30 a.m.; domingos y festivos no se labora.
 - Se atiende por orden de llegada, pero si la persona agenda se respeta la hora programada.

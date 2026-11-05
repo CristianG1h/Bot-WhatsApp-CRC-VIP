@@ -135,6 +135,10 @@ function esTelefonoValido(telefono) {
   return limpio.length >= 7 && limpio.length <= 13;
 }
 
+function esNombreValido(nombre) {
+  return nombre.length >= 5 && nombre.includes(" ") && !/\d/.test(nombre);
+}
+
 function fechaDesdeISO(iso) {
   const match = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
@@ -159,7 +163,7 @@ function mensajePromocionRenovacion() {
 
 Si tu licencia es categoría *A1, A2, B1, B2, C1, C2 o C3*, tenemos una promoción especial este mes.
 
-💰 *Renovación o refrendación: $180.000*
+💰 *Renovación o refrendación: $190.000*
 
 📍 Estamos ubicados en *Cra. 28A #51-70, barrio Galerías – Bogotá*.
 🚗 Contamos con parqueadero.
@@ -213,8 +217,8 @@ function respuestaInformacion(opcion) {
   const respuestas = {
     "1": `💰 *Precios*
 
-• Renovación o refrendación de una categoría: *$180.000*
-• Dos categorías en combo: *$250.000*
+• Renovación o refrendación de una categoría: *$190.000*
+• Dos categorías en combo: *$270.000*
 
 Aplican categorías A1, A2, B1, B2, C1, C2 o C3.`,
     "2": `⏱️ *Duración aproximada*
@@ -332,6 +336,16 @@ async function responder(to, body) {
   Stats.mensajeEnviado(to, texto.slice(0, 120));
   await logOutgoingMessage(to, texto);
   return result;
+}
+
+async function registrarContactoEnChatwoot(from, nombre, telefono) {
+  // Guardar el contacto aunque el usuario abandone antes de confirmar la cita.
+  await addPrivateNote(
+    from,
+    `📋 *Datos de contacto CRC*\n\n👤 Nombre: *${nombre}*\n📞 Teléfono: *${telefono}*`
+  ).catch((error) => {
+    console.error("⚠️ No fue posible registrar el contacto en Chatwoot:", error.message);
+  });
 }
 
 function asesorSigueActivo(session) {
@@ -599,10 +613,10 @@ async function procesarMensaje(from, text, options = {}) {
   if (session.step === "RENOVACION_INTERES") {
     if (esSi(msg)) {
       updateSession(from, {
-        step: "AGENDAR_RENOVACION",
+        step: "NOMBRE_CONTACTO",
         tramite: "Renovación / Refrendación",
       });
-      await responder(from, mensajePromocionRenovacion());
+      await responder(from, mensajeNombre());
       return;
     }
 
@@ -613,6 +627,40 @@ async function procesarMensaje(from, text, options = {}) {
     }
 
     await responder(from, mensajePreguntaRenovacion());
+    return;
+  }
+
+  if (session.step === "NOMBRE_CONTACTO") {
+    const nombre = String(text || "").trim().replace(/\s+/g, " ");
+    if (!esNombreValido(nombre)) {
+      await responder(
+        from,
+        "Por favor envíame tu *nombre completo*, con nombre y apellido y sin números."
+      );
+      return;
+    }
+
+    updateSession(from, {
+      step: "TELEFONO_CONTACTO",
+      nombreCita: nombre,
+    });
+    await responder(from, mensajeTelefono());
+    return;
+  }
+
+  if (session.step === "TELEFONO_CONTACTO") {
+    const telefono = String(text || "").replace(/\D/g, "");
+    if (!esTelefonoValido(telefono)) {
+      await responder(from, "⚠️ Por favor envía un número de teléfono válido.");
+      return;
+    }
+
+    updateSession(from, {
+      step: "AGENDAR_RENOVACION",
+      telefonoCita: telefono,
+    });
+    await registrarContactoEnChatwoot(from, session.nombreCita, telefono);
+    await responder(from, mensajePromocionRenovacion());
     return;
   }
 
@@ -744,11 +792,12 @@ Ejemplo:
       return;
     }
 
+    const contactoRegistrado = Boolean(session.nombreCita && session.telefonoCita);
     updateSession(from, {
-      step: "NOMBRE_CITA",
+      step: contactoRegistrado ? "CEDULA_CITA" : "NOMBRE_CITA",
       horarioCita: horario,
     });
-    await responder(from, mensajeNombre());
+    await responder(from, contactoRegistrado ? mensajeCedula() : mensajeNombre());
     return;
   }
 
@@ -759,17 +808,18 @@ Ejemplo:
       return;
     }
 
+    const contactoRegistrado = Boolean(session.nombreCita && session.telefonoCita);
     updateSession(from, {
-      step: "NOMBRE_CITA",
+      step: contactoRegistrado ? "CEDULA_CITA" : "NOMBRE_CITA",
       horarioCita: horario,
     });
-    await responder(from, mensajeNombre());
+    await responder(from, contactoRegistrado ? mensajeCedula() : mensajeNombre());
     return;
   }
 
   if (session.step === "NOMBRE_CITA") {
     const nombre = String(text || "").trim().replace(/\s+/g, " ");
-    if (nombre.length < 5 || !nombre.includes(" ") || /\d/.test(nombre)) {
+    if (!esNombreValido(nombre)) {
       await responder(
         from,
         "Por favor envíame tu *nombre completo*, con nombre y apellido y sin números."
@@ -796,13 +846,7 @@ Ejemplo:
       step: "CEDULA_CITA",
       telefonoCita: telefono,
     });
-    // Dejar el contacto disponible para el asesor aunque el agendamiento quede incompleto.
-    await addPrivateNote(
-      from,
-      `📋 *Datos de contacto CRC*\n\n👤 Nombre: *${session.nombreCita || "No registrado"}*\n📞 Teléfono: *${telefono}*`
-    ).catch((error) => {
-      console.error("⚠️ No fue posible registrar el contacto en Chatwoot:", error.message);
-    });
+    await registrarContactoEnChatwoot(from, session.nombreCita, telefono);
     await responder(from, mensajeCedula());
     return;
   }
